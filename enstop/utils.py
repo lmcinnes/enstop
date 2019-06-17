@@ -2,6 +2,7 @@ import numpy as np
 import numba
 from scipy.sparse import issparse, csc_matrix
 
+
 @numba.njit(fastmath=True, nogil=True)
 def normalize(ndarray, axis=0):
     """Normalize an array with respect to the l1-norm
@@ -42,6 +43,33 @@ def normalize(ndarray, axis=0):
 
 @numba.njit()
 def _log_lift(topics, z, empirical_probs, n=-1):
+    """Internal method to compute the log lift given
+    precomputed empirical probabilities. This routine
+    is designed to be numba compilable for performance.
+
+    Parameters
+    ----------
+    topics: array of shape (n_topics, n_words)
+        The topic vectors to evaluate.
+
+    z: int
+        Which topic vector to evaluate. Must be
+        in range(0, n_topics).
+
+    empirical_probs: array of shape (n_words,)
+        The empirical probability of word occurrence.
+
+    n: int (optional, default=-1)
+        The number of words to average over. If
+        less than 0 it will evaluate over the entire
+        vocabulary, otherwise it will select the top
+        ``n`` words of the chosen topic.
+
+    Returns
+    -------
+    log_lift: float
+        The log lift of the ``z``th topic vector.
+    """
     total_lift = 0.0
     if n <= 0:
         for w in range(topics.shape[1]):
@@ -58,6 +86,33 @@ def _log_lift(topics, z, empirical_probs, n=-1):
 
 
 def log_lift(topics, z, data, n_words=-1):
+    """Compute the log lift of a single topic
+    given empirical data from which empirical
+    probabilities of word occurrence can be computed.
+
+     Parameters
+     ----------
+     topics: array of shape (n_topics, n_words)
+         The topic vectors to evaluate.
+
+     z: int
+         Which topic vector to evaluate. Must be
+         in range(0, n_topics).
+
+     data: array or sparse matrix of shape (n_docs, n_words,)
+         The empirical data of word occurrence in a corpus.
+
+     n: int (optional, default=-1)
+         The number of words to average over. If
+         less than 0 it will evaluate over the entire
+         vocabulary, otherwise it will select the top
+         ``n`` words of the chosen topic.
+
+     Returns
+     -------
+     log_lift: float
+         The log lift of the ``z``th topic vector.
+     """
     normalized_topics = topics.copy()
     normalize(normalized_topics, axis=1)
     empirical_probs = np.array(data.sum(axis=0)).squeeze().astype(np.float64)
@@ -66,6 +121,29 @@ def log_lift(topics, z, data, n_words=-1):
 
 
 def mean_log_lift(topics, data, n_words=-1):
+    """Compute the average log lift over all topics
+    given empirical data from which empirical
+    probabilities of word occurrence can be computed.
+
+     Parameters
+     ----------
+     topics: array of shape (n_topics, n_words)
+         The topic vectors to evaluate.
+
+     data: array or sparse matrix of shape (n_docs, n_words,)
+         The empirical data of word occurrence in a corpus.
+
+     n: int (optional, default=-1)
+         The number of words to average over. If
+         less than 0 it will evaluate over the entire
+         vocabulary, otherwise it will select the top
+         ``n`` words of the chosen topic.
+
+     Returns
+     -------
+     log_lift: float
+         The average log lift over all topic vectors.
+     """
     normalized_topics = topics.copy()
     normalize(normalized_topics, axis=1)
     empirical_probs = np.array(data.sum(axis=0)).squeeze().astype(np.float64)
@@ -80,6 +158,7 @@ def mean_log_lift(topics, data, n_words=-1):
 
 @numba.njit()
 def arr_intersect(ar1, ar2):
+    """Numba compilable equivalent of numpy's intersect1d"""
     aux = np.concatenate((ar1, ar2))
     aux.sort()
     return aux[:-1][aux[1:] == aux[:-1]]

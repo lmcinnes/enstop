@@ -7,13 +7,8 @@ from sklearn.utils.extmath import randomized_svd
 from sklearn.decomposition import non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
-from enstop.utils import (
-    normalize,
-    coherence,
-    mean_coherence,
-    log_lift,
-    mean_log_lift,
-)
+from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
+
 
 @numba.njit(fastmath=True, nogil=True)
 def plsa_e_step(
@@ -25,19 +20,18 @@ def plsa_e_step(
     p_z_given_wd,
     probability_threshold=1e-32,
 ):
-    """Perform the E-step of pLSA optimization. This
-    amounts to computing the probability of each topic
-    given each word document pair. The computation
+    """Perform the E-step of pLSA optimization. This amounts to computing the
+    probability of each topic given each word document pair. The computation
     implements
 
     P(z|w,d) = \frac{P(z|w)P(d|z)}{\sum_{z=1}^k P(z|w)P(d|z)}.
 
-    This routine is optimized to work with sparse matrices
-    such that P(z|w,d) is only computed for w, d such that
-    X_{w,d} is non-zero, where X is the data matrix.
+    This routine is optimized to work with sparse matrices such that P(z|w,d)
+    is only computed for w, d such that X_{w,d} is non-zero, where X is the
+    data matrix.
 
-    To make this numba compilable the raw arrays defining
-    the COO format sparse matrix must be passed separately.
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
 
 
     Parameters
@@ -62,9 +56,8 @@ def plsa_e_step(
         The result array to write new estimates of P(z|w,d) to.
 
     probability_threshold: float (optional, default=1e-32)
-        Option to promote sparsity. If the value of
-        P(w|z)P(z|d) falls below threshold then write a
-        zero for P(z|w,d).
+        Option to promote sparsity. If the value of P(w|z)P(z|d) falls below
+        threshold then write a zero for P(z|w,d).
 
     """
 
@@ -91,29 +84,19 @@ def plsa_e_step(
 
 @numba.njit(fastmath=True, nogil=True)
 def plsa_m_step(
-    X_rows,
-    X_cols,
-    X_vals,
-    p_w_given_z,
-    p_z_given_d,
-    p_z_given_wd,
-    norm_pwz,
-    norm_pdz,
+    X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
 ):
-    """Perform the M-step of pLSA optimization. This
-    amounts to using the estimates of P(z|w,d) to
-    estimate the values P(w|z) and P(z|d). The
-    computation implements
+    """Perform the M-step of pLSA optimization. This amounts to using the estimates
+    of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation implements
 
     P(w|z) = \frac{\sum_{d\in D} X_{w,d}P(z|w,d)}{\sum_{d,z} X_{w,d}P(z|w,d)}
     P(z|d) = \frac{\sum_{w\in V} X_{w,d}P(z|w,d)}{\sum_{w,d} X_{w,d}P(z|w,d)}
 
-    This routine is optimized to work with sparse matrices
-    such that P(z|w,d) is only computed for w, d such that
-    X_{w,d} is non-zero, where X is the data matrix.
+    This routine is optimized to work with sparse matrices such that P(z|w,d) is only
+    computed for w, d such that X_{w,d} is non-zero, where X is the data matrix.
 
-    To make this numba compilable the raw arrays defining
-    the COO format sparse matrix must be passed separately.
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
 
     Parameters
     ----------
@@ -137,12 +120,12 @@ def plsa_m_step(
         The current estimates for P(z|w,d)
 
     norm_pwz: array of shape (n_topics,)
-        Auxilliary array used for storing row norms; this
-        is passed in to save reallocations.
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
 
     norm_pdz: array of shape (n_docs,)
-        Auxilliary array used for storing row norms; this
-        is passed in to save reallocations.
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
 
     """
 
@@ -183,19 +166,17 @@ def plsa_m_step(
 
 @numba.njit(fastmath=True, nogil=True)
 def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
-    """Compute the log-likelihood of observing the data X given
-    estimates for P(w|z) and P(z|d). The likelihood of X_{w,d} under
-    the model is given by X_{w,d} P(w|d) = X_{w,d} P(w|z) P(z|d).
-    This function returns
+    """Compute the log-likelihood of observing the data X given estimates for P(w|z)
+    and P(z|d). The likelihood of X_{w,d} under the model is given by X_{w,d} P(w|d)
+    = X_{w,d} P(w|z) P(z|d). This function returns
 
     \log\left(\prod_{w,d} X_{w,d} P(w|d)\right)
 
-    This routine is optimized to work with sparse matrices
-    and only compute values for w, d such that
-    X_{w,d} is non-zero.
+    This routine is optimized to work with sparse matrices and only compute values
+    for w, d such that X_{w,d} is non-zero.
 
-    To make this numba compilable the raw arrays defining
-    the COO format sparse matrix must be passed separately.
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
 
     Parameters
     ----------
@@ -266,22 +247,17 @@ def norm(x):
 
 @numba.jit(fastmath=True)
 def plsa_init(X, k, init="random"):
-    """Initialize matrices for pLSA. Specifically, given
-    data X, a number of topics k, and an initialization
-    method, compute matrices for P(z|d) and P(w|z) that
-    can be used to begin an EM optimization of pLSA.
+    """Initialize matrices for pLSA. Specifically, given data X, a number of topics
+    k, and an initialization method, compute matrices for P(z|d) and P(w|z) that can
+    be used to begin an EM optimization of pLSA.
 
-    Various initialization approaches are available. The
-    most straightforward is "random", which randomly
-    initializes values for P(z|d) and P(w|z) and
-    normalizes to make them probabilities. A second
-    approach, borrowing from sklearn's NMF implementation,
-    is to use a non-negative SVD approach ("nndsvd"). A
-    third option is the use the fast coordinate descent
-    under Frobenius loss version of NMF and then
-    normalize to make probabilities ("nmf"). Finally if
-    the ``init`` parameter is a tuple of ndarrays then
-    these will be used, allowing for custom user defined
+    Various initialization approaches are available. The most straightforward is
+    "random", which randomly initializes values for P(z|d) and P(w|z) and normalizes
+    to make them probabilities. A second approach, borrowing from sklearn's NMF
+    implementation, is to use a non-negative SVD approach ("nndsvd"). A third option
+    is the use the fast coordinate descent under Frobenius loss version of NMF and
+    then normalize to make probabilities ("nmf"). Finally if the ``init`` parameter
+    is a tuple of ndarrays then these will be used, allowing for custom user defined
     initializations.
 
     Parameters
@@ -293,13 +269,11 @@ def plsa_init(X, k, init="random"):
         The number of topics for pLSA to fit with.
 
     init: string or tuple (optional, default="random")
-        The intialization method to use. This should be
-        one of:
+        The intialization method to use. This should be one of:
             * ``"random"``
             * ``"nndsvd"``
             * ``"nmf"``
-        or a tuple of two ndarrays of shape
-        (n_docs, n_topics) and (n_topics, n_words).
+        or a tuple of two ndarrays of shape (n_docs, n_topics) and (n_topics, n_words).
 
     Returns
     -------
@@ -385,19 +359,16 @@ def plsa_fit_inner(
     tolerance=0.001,
     e_step_thresh=1e-32,
 ):
-    """Internal loop of EM steps required to optimize pLSA,
-    along with relative convergence tests with respect
-    to the log-likelihood of observing the data under the
-    model.
+    """Internal loop of EM steps required to optimize pLSA, along with relative
+    convergence tests with respect to the log-likelihood of observing the data under
+    the model.
 
-    The EM looping will stop when either ``n_iter`` iterations
-    have been reached, or if the relative improvement in
-    log-likelihood over the last ``n_iter_per_test`` steps
-    is under ``threshold``.
+    The EM looping will stop when either ``n_iter`` iterations have been reached,
+    or if the relative improvement in log-likelihood over the last
+    ``n_iter_per_test`` steps is under ``threshold``.
 
-    This function is designed to wrap the internals of the EM
-    process in a numba compilable loop, and is not the preferred
-    entry point for fitting a plsa model.
+    This function is designed to wrap the internals of the EM process in a numba
+    compilable loop, and is not the preferred entry point for fitting a plsa model.
 
     Parameters
     ----------
@@ -429,9 +400,8 @@ def plsa_fit_inner(
         log-likelihood required to continue iterations.
 
     e_step_thresh: float (optional, default=1e-32)
-        Option to promote sparsity. If the value of
-        P(w|z)P(z|d) in the E step falls below threshold
-        then write a zero for P(z|w,d).
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
 
     Returns
     -------
@@ -495,14 +465,11 @@ def plsa_fit(
     tolerance=0.001,
     e_step_thresh=1e-32,
 ):
-    """Fit a pLSA model to a data matrix ``X`` with
-    ``k`` topics, an initialized according to ``init``.
-    This will run an EM method to optimize estimates
-    of P(z|d) and P(w|z). The will perform at most
-    ``n_iter`` EM step iterations, while checking
-    for relative improvement of the log-likelihood
-    of the data under the model every ``n_iter_per_test``
-    iterations, and stops early if that is under
+    """Fit a pLSA model to a data matrix ``X`` with ``k`` topics, an initialized
+    according to ``init``. This will run an EM method to optimize estimates of P(z|d)
+    and P(w|z). The will perform at most ``n_iter`` EM step iterations,
+    while checking for relative improvement of the log-likelihood of the data under
+    the model every ``n_iter_per_test`` iterations, and stops early if that is under
     ``tolerance``.
 
     Parameters
@@ -514,13 +481,11 @@ def plsa_fit(
         The number of topics for pLSA to fit with.
 
     init: string or tuple (optional, default="random")
-        The intialization method to use. This should be
-        one of:
+        The intialization method to use. This should be one of:
             * ``"random"``
             * ``"nndsvd"``
             * ``"nmf"``
-        or a tuple of two ndarrays of shape
-        (n_docs, n_topics) and (n_topics, n_words).
+        or a tuple of two ndarrays of shape (n_docs, n_topics) and (n_topics, n_words).
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -534,9 +499,8 @@ def plsa_fit(
         log-likelihood required to continue iterations.
 
     e_step_thresh: float (optional, default=1e-32)
-        Option to promote sparsity. If the value of
-        P(w|z)P(z|d) in the E step falls below threshold
-        then write a zero for P(z|w,d).
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
 
     Returns
     -------
@@ -568,15 +532,14 @@ def plsa_fit(
 def plsa_refit_m_step(
     X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pdz
 ):
-    """Optimized routine for the M step fitting values of P(z|d)
-    given a fixed set of topics (i.e. P(w|z)).
+    """Optimized routine for the M step fitting values of P(z|d) given a fixed set of
+    topics (i.e. P(w|z)).
 
-    This routine is optimized to work with sparse matrices
-    and only compute values for w, d such that
-    X_{w,d} is non-zero.
+    This routine is optimized to work with sparse matrices and only compute values
+    for w, d such that X_{w,d} is non-zero.
 
-    To make this numba compilable the raw arrays defining
-    the COO format sparse matrix must be passed separately.
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
 
     Parameters
     ----------
@@ -600,12 +563,8 @@ def plsa_refit_m_step(
         The current estimates for P(z|w,d)
 
     norm_pdz: array of shape (n_docs,)
-        Auxilliary array used for storing row norms; this
-        is passed in to save reallocations.
-
-
-    Returns
-    -------
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
 
     """
 
@@ -645,18 +604,15 @@ def plsa_refit(
     tolerance=0.001,
     e_step_thresh=1e-16,
 ):
-    """Optimized routine for refitting values of P(z|d)
-    given a fixed set of topics (i.e. P(w|z)). This
-    allows fitting document vectors to a predefined
-    set of topics (given, for example, by an ensemble
-    result).
+    """Optimized routine for refitting values of P(z|d) given a fixed set of topics (
+    i.e. P(w|z)). This allows fitting document vectors to a predefined set of topics
+    (given, for example, by an ensemble result).
 
-    This routine is optimized to work with sparse matrices
-    and only compute values for w, d such that
-    X_{w,d} is non-zero.
+    This routine is optimized to work with sparse matrices and only compute values
+    for w, d such that X_{w,d} is non-zero.
 
-    To make this numba compilable the raw arrays defining
-    the COO format sparse matrix must be passed separately.
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
 
     Parameters
     ----------
@@ -680,17 +636,16 @@ def plsa_refit(
         The maximum number iterations of EM to perform
 
     n_iter_per_test: int
-        The number of iterations between tests for
-        relative improvement in log-likelihood.
+        The number of iterations between tests for relative improvement in
+        log-likelihood.
 
     tolerance: float
-        The threshold of relative improvement in
-        log-likelihood required to continue iterations.
+        The threshold of relative improvement in log-likelihood required to continue
+        iterations.
 
     e_step_thresh: float (optional, default=1e-32)
-        Option to promote sparsity. If the value of
-        P(w|z)P(z|d) in the E step falls below threshold
-        then write a zero for P(z|w,d).
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
 
     Returns
     -------
@@ -718,7 +673,7 @@ def plsa_refit(
             X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, e_step_thresh
         )
         plsa_refit_m_step(
-            X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, norm_pdz,
+            X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, norm_pdz
         )
 
         if i % n_iter_per_test == 0:

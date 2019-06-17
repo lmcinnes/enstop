@@ -1,27 +1,60 @@
 import numpy as np
 import numba
+from warnings import warn
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array
 from sklearn.decomposition import NMF, non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 import dask
-import joblib
+
+try:
+    import joblib
+
+    _HAVE_JOBLIB = True
+except ImportError:
+    warn("Joblib could not be loaded; joblib parallelism will not be available")
+    _HAVE_JOBLIB = False
 from hdbscan._hdbscan_linkage import mst_linkage_core, label
 from hdbscan.hdbscan_ import _tree_to_labels
 import hdbscan
 import umap
 from umap.distances import hellinger
 
-from enstop.utils import (
-    normalize,
-    coherence,
-    mean_coherence,
-    log_lift,
-    mean_log_lift,
-)
+from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
 from enstop.plsa import plsa_fit, plsa_refit
 
+
 def plsa_topics(X, k, **kwargs):
+    """Perform a boostrap sample from a corpus
+    of documents and fit the sample using pLSA
+    to give a set of topic vectors such that the
+    (z,w) entry of the returned array is the
+    probability P(w|z) of word w occuring given
+    the zth topic.
+
+    Parameters
+    ----------
+    X: sparse matrix of shape (n_docs, n_words)
+        The bag of words representation of the corpus
+        of documents.
+    k: int
+        The number of topics to generate.
+
+    kwargs:
+        Further keyword arguments that can be
+        passed on th the ``plsa_fit`` function.
+        Possibilities include:
+            * ``init``
+            * ``n_iter``
+            * ``n_iter_per_test``
+            * ``tolerance``
+            * ``e_step_threshold``
+
+    Returns
+    -------
+    topics: array of shape (k, n_words)
+        The topics generated from the bootstrap sample.
+    """
     A = X.tocsr()
     bootstrap_sample_indices = np.random.randint(0, A.shape[0], size=A.shape[0])
     B = A[bootstrap_sample_indices]
@@ -38,6 +71,36 @@ def plsa_topics(X, k, **kwargs):
 
 
 def nmf_topics(X, k, **kwargs):
+    """Perform a boostrap sample from a corpus
+    of documents and fit the sample using NMF
+    to give a set of topic vectors, normalized
+    such that the(z,w) entry of the returned
+    array is the probability P(w|z) of word w
+    occuring given the zth topic.
+
+    Parameters
+    ----------
+    X: sparse matrix of shape (n_docs, n_words)
+        The bag of words representation of the corpus
+        of documents.
+    k: int
+        The number of topics to generate.
+
+    kwargs:
+        Further keyword arguments that can be
+        passed on th the ``plsa_fit`` function.
+        Possibilities include:
+            * ``init``
+            * ``n_iter``
+            * ``n_iter_per_test``
+            * ``tolerance``
+            * ``e_step_threshold``
+
+    Returns
+    -------
+    topics: array of shape (k, n_words)
+        The topics generated from the bootstrap sample.
+    """
     A = X.tocsr()
     bootstrap_sample_indices = np.random.randint(0, A.shape[0], size=A.shape[0])
     B = A[bootstrap_sample_indices]
@@ -68,11 +131,13 @@ def ensemble_of_topics(
         dask_topics = dask.delayed(create_topics)
         staged_topics = [dask_topics(X, k, **kwargs) for i in range(n_runs)]
         topics = dask.compute(*staged_topics, scheduler="threads", num_workers=n_jobs)
-    elif parallelism == "joblib":
+    elif parallelism == "joblib" and _HAVE_JOBLIB:
         joblib_topics = joblib.delayed(create_topics)
         topics = joblib.Parallel(n_jobs=n_jobs, prefer="threads")(
             joblib_topics(X, k, **kwargs) for i in range(n_runs)
         )
+    elif parallelism == "joblib" and not _HAVE_JOBLIB:
+        raise ValueError("Joblib was not correctly imported and is unavailable")
     else:
         raise ValueError(
             "Unrecognized parallelism {}; should be one of {}".format(
@@ -401,5 +466,3 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             raise ValueError(
                 "Topic number must be in range 0 to {}".format(self.n_components)
             )
-
-
