@@ -5,9 +5,8 @@ from scipy.sparse import issparse, csc_matrix
 
 @numba.njit(fastmath=True, nogil=True)
 def normalize(ndarray, axis=0):
-    """Normalize an array with respect to the l1-norm
-    along an axis. Note that this procedure modifies
-    the array **in place**.
+    """Normalize an array with respect to the l1-norm along an axis. Note that this procedure
+    modifies the array **in place**.
 
     Parameters
     ----------
@@ -15,8 +14,7 @@ def normalize(ndarray, axis=0):
         The array to be normalized. Must be a 2D array.
 
     axis: int (optional, default=0)
-        The axis to normalize with respect to. 0 means
-        normalize columns, 1 means normalize rows.
+        The axis to normalize with respect to. 0 means normalize columns, 1 means normalize rows.
     """
     # Compute marginal sum along axis
     marginal = np.zeros(ndarray.shape[1 - axis])
@@ -43,9 +41,8 @@ def normalize(ndarray, axis=0):
 
 @numba.njit()
 def _log_lift(topics, z, empirical_probs, n=-1):
-    """Internal method to compute the log lift given
-    precomputed empirical probabilities. This routine
-    is designed to be numba compilable for performance.
+    """Internal method to compute the log lift given precomputed empirical probabilities. This
+    routine is designed to be numba compilable for performance.
 
     Parameters
     ----------
@@ -60,10 +57,8 @@ def _log_lift(topics, z, empirical_probs, n=-1):
         The empirical probability of word occurrence.
 
     n: int (optional, default=-1)
-        The number of words to average over. If
-        less than 0 it will evaluate over the entire
-        vocabulary, otherwise it will select the top
-        ``n`` words of the chosen topic.
+        The number of words to average over. If less than 0 it will evaluate over the entire
+        vocabulary, otherwise it will select the top ``n`` words of the chosen topic.
 
     Returns
     -------
@@ -86,8 +81,7 @@ def _log_lift(topics, z, empirical_probs, n=-1):
 
 
 def log_lift(topics, z, data, n_words=-1):
-    """Compute the log lift of a single topic
-    given empirical data from which empirical
+    """Compute the log lift of a single topic given empirical data from which empirical
     probabilities of word occurrence can be computed.
 
      Parameters
@@ -103,10 +97,8 @@ def log_lift(topics, z, data, n_words=-1):
          The empirical data of word occurrence in a corpus.
 
      n: int (optional, default=-1)
-         The number of words to average over. If
-         less than 0 it will evaluate over the entire
-         vocabulary, otherwise it will select the top
-         ``n`` words of the chosen topic.
+         The number of words to average over. If less than 0 it will evaluate over the entire
+         vocabulary, otherwise it will select the top ``n`` words of the chosen topic.
 
      Returns
      -------
@@ -121,8 +113,7 @@ def log_lift(topics, z, data, n_words=-1):
 
 
 def mean_log_lift(topics, data, n_words=-1):
-    """Compute the average log lift over all topics
-    given empirical data from which empirical
+    """Compute the average log lift over all topics given empirical data from which empirical
     probabilities of word occurrence can be computed.
 
      Parameters
@@ -134,10 +125,8 @@ def mean_log_lift(topics, data, n_words=-1):
          The empirical data of word occurrence in a corpus.
 
      n: int (optional, default=-1)
-         The number of words to average over. If
-         less than 0 it will evaluate over the entire
-         vocabulary, otherwise it will select the top
-         ``n`` words of the chosen topic.
+         The number of words to average over. If less than 0 it will evaluate over the entire
+         vocabulary, otherwise it will select the top ``n`` words of the chosen topic.
 
      Returns
      -------
@@ -166,6 +155,37 @@ def arr_intersect(ar1, ar2):
 
 @numba.njit()
 def _coherence(topics, z, n, indices, indptr, n_docs_per_word):
+    """Internal routine for computing the coherence of a given topic given raw data and the
+    number of documents per vocabulary word. This routine makes use of scipy sparse matrix
+    formats, but to be numba compilable it must make use of internal arrays thereof.
+
+    Parameters
+    ----------
+    topics: array of shape (n_topics, n_words)
+        The topic vectors for scoring
+
+    z: int
+        Which topic vector to score.
+
+    n: int
+        The number of topic words to score against. The top ``n`` words from the ``z``th topic
+        will be used.
+
+    indices: array of shape (nnz,)
+        The indices array of a CSC format sparse matrix representation of the corpus data.
+
+    indptr: array of shape(n_words - 1,)
+        The indptr array of a CSC format sparse matrix representation of the corpus data.
+
+    n_docs_per_word: array of shape (n_words,)
+        The total number of documents for each vocabulary word (the column sum of the corpus data).
+
+
+    Returns
+    -------
+    topic_coherence: float
+        The coherence score of the ``z``th topic.
+    """
     top_words = np.argsort(topics[z])[-n:]
     coherence = 0.0
     for i in range(n - 1):
@@ -182,6 +202,28 @@ def _coherence(topics, z, n, indices, indptr, n_docs_per_word):
 
 
 def coherence(topics, z, data, n_words=20):
+    """Compute the coherence of a single topic given empirical data.
+
+    Parameters
+    ----------
+    topics: array of shape (n_topics, n_words)
+        The topic vectors for scoring
+
+    z: int
+        Which topic vector to score.
+
+    data: array or sparse matrix of shape (n_doc, n_words)
+        The empirical data of word occurrence in a corpus.
+
+    n_words: int (optional, default=20)
+        The number of topic words to score against. The top ``n_words`` words from the ``z``th topic
+        will be used.
+
+    Returns
+    -------
+    topic_coherence: float
+        The coherence score of the ``z``th topic.
+    """
     if not issparse(data):
         csc_data = csc_matrix(data)
     else:
@@ -194,6 +236,25 @@ def coherence(topics, z, data, n_words=20):
 
 
 def mean_coherence(topics, data, n_words=20):
+    """Compute the average coherence of all topics given empirical data.
+
+    Parameters
+    ----------
+    topics: array of shape (n_topics, n_words)
+        The topic vectors for scoring
+
+    data: array or sparse matrix of shape (n_doc, n_words)
+        The empirical data of word occurrence in a corpus.
+
+    n_words: int (optional, default=20)
+        The number of topic words to score against. The top ``n_words`` words of each topic
+        will be used.
+
+    Returns
+    -------
+    topic_coherence: float
+        The average coherence score of all the topics.
+    """
     if not issparse(data):
         csc_data = csc_matrix(data)
     else:
