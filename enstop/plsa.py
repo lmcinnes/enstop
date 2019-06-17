@@ -691,14 +691,80 @@ def plsa_refit(
 
 
 class PLSA(BaseEstimator, TransformerMixin):
+    """Probabilistic Latent Semantic Analysis (pLSA)
+
+    Given a bag-of-words matrix representation of a corpus of documents, where each row of the
+    matrix represents a document, and the jth element of the ith row is the count of the number of
+    times the jth vocabulary word occurs in the ith document, estimate matrices of conditional
+    probabilities P(z|d) and P(w|z) such that the product matrix of probabilities P(w|d)
+    maximises the likelihood of seeing the observed corpus data. Here P(z|d) represents the
+    probability of topic z given document d, P(w|z) represents the probability of word w given
+    topic z, and P(w|d) represents the probability of word w given document d.
+
+    The algorithm proceeds using an Expectation-Maximization (EM) approach to attempt to maximise
+    the likelihood of the observed data under the estimated model.
+
+    Parameters
+    ----------
+    n_components: int (optional, default=10)
+        The number of topics to use in the matrix factorization.
+
+    init: string or tuple (optional, default="random")
+        The intialization method to use. This should be one of:
+            * ``"random"``
+            * ``"nndsvd"``
+            * ``"nmf"``
+        or a tuple of two ndarrays of shape (n_docs, n_topics) and (n_topics, n_words).
+
+    n_iter: int
+        The maximum number iterations of EM to perform
+
+    n_iter_per_test: int
+        The number of iterations between tests for relative improvement in
+        log-likelihood.
+
+    tolerance: float
+        The threshold of relative improvement in log-likelihood required to continue
+        iterations.
+
+    e_step_thresh: float (optional, default=1e-32)
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
+
+    Attributes
+    ----------
+
+    components_: array of shape (n_topics, n_words)
+        The topic vectors produced by pLSA. Each row is a topic, which is a probability
+        distribution, over the vocabulary, giving the probability of each word given the topic (
+        P(w|z)).
+
+    embedding_: array of shape (n_docs, n_topics)
+        The document vectors produced by pLSA. Each row corresponds to a document, giving a
+        probability distribution, over the topic space, specifying the probability of each topic
+        occuring in the document (P(z|d)).
+
+    training_data_: sparse matrix of shape (n_docs, n_words)
+        The original training data saved in sparse matrix format.
+
+    References
+    ----------
+
+    Hofmann, Thomas. "Probabilistic latent semantic analysis." Proceedings of the Fifteenth
+    conference on Uncertainty in artificial intelligence. Morgan Kaufmann Publishers Inc., 1999.
+
+    Hofmann, Thomas. "Unsupervised learning by probabilistic latent semantic analysis."
+    Machine learning 42.1-2 (2001): 177-196.
+
+    """
     def __init__(
         self,
         n_components=10,
-        init="nndsvd",
+        init="random",
         n_iter=100,
         n_iter_per_test=10,
         tolerance=0.001,
-        e_step_thresh=1e-16,
+        e_step_thresh=1e-32,
     ):
 
         self.n_components = n_components
@@ -709,10 +775,41 @@ class PLSA(BaseEstimator, TransformerMixin):
         self.e_step_thresh = e_step_thresh
 
     def fit(self, X, y=None):
+        """Learn the pLSA model for the data X and return the document vectors.
+
+        This is more efficient than calling fit followed by transform.
+
+        Parameters
+        ----------
+        X: array or sparse matrix of shape (n_docs, n_words)
+            The data matrix pLSA is attempting to fit to.
+
+        y: Ignored
+
+        Returns
+        -------
+        self
+        """
         self.fit_transform(X)
         return self
 
     def fit_transform(self, X, y=None):
+        """Learn the pLSA model for the data X and return the document vectors.
+
+        This is more efficient than calling fit followed by transform.
+
+        Parameters
+        ----------
+        X: array or sparse matrix of shape (n_docs, n_words)
+            The data matrix pLSA is attempting to fit to.
+
+        y: Ignored
+
+        Returns
+        -------
+        embedding: array of shape (n_docs, n_topics)
+            An embedding of the documents into a topic space.
+        """
 
         X = check_array(X, accept_sparse="csr")
 
@@ -735,6 +832,20 @@ class PLSA(BaseEstimator, TransformerMixin):
         return U
 
     def transform(self, X, y=None):
+        """Transform the data X into the topic space of the fitted pLSA model.
+
+        Parameters
+        ----------
+        X: array or sparse matrix of shape (n_docs, n_words)
+            Corpus to be embedded into topic space
+
+        y: Ignored
+
+        Returns
+        -------
+        embedding: array of shape (n_docs, n_topics)
+            An embedding of the documents X into the topic space.
+        """
         X = check_array(X, accept_sparse="csr")
 
         if not issparse(X):
@@ -759,6 +870,23 @@ class PLSA(BaseEstimator, TransformerMixin):
         return result
 
     def coherence(self, topic_num=None, n_words=20):
+        """Compute the average coherence of fitted topics, or of a single individual topic.
+
+        Parameters
+        ----------
+        topic_num: int (optional, default=None)
+            The topic number to compute coherence for. If ``topic_num`` is None then the average
+            coherence over all topics will be computed.
+
+        n_words int (optional, default=20)
+            The number of topic words to score against. The top ``n_words`` words from the selected
+            topic will be used.
+
+        Returns
+        -------
+        topic_coherence: float
+            The requested coherence score.
+        """
 
         # Test for errors
         if not isinstance(topic_num, int) and topic_num is not None:
@@ -774,6 +902,24 @@ class PLSA(BaseEstimator, TransformerMixin):
             )
 
     def log_lift(self, topic_num=None, n_words=20):
+        """Compute the average log lift of fitted topics, or of a single individual topic.
+
+        Parameters
+        ----------
+        topic_num: int (optional, default=None)
+            The topic number to compute log lift for. If ``topic_num`` is None then the average
+            log lift over all topics will be computed.
+
+        n_words int (optional, default=20)
+            The number of topic words to score against. The top ``n_words`` words from the selected
+            topic will be used.
+
+
+        Returns
+        -------
+        log_lift: float
+            The requested log lift score.
+        """
 
         # Test for errors
         if not isinstance(topic_num, int) and topic_num is not None:
