@@ -22,6 +22,25 @@ import umap
 # TODO: Once umap 0.4 is released enable this...
 # from umap.distances import hellinger
 
+@numba.njit()
+def hellinger(x, y):
+    result = 0.0
+    l1_norm_x = 0.0
+    l1_norm_y = 0.0
+
+    for i in range(x.shape[0]):
+        result += np.sqrt(x[i] * y[i])
+        l1_norm_x += x[i]
+        l1_norm_y += y[i]
+
+    if l1_norm_x == 0 and l1_norm_y == 0:
+        return 0.0
+    elif l1_norm_x == 0 or l1_norm_y == 0:
+        return 1.0
+    else:
+        return np.sqrt(1 - result / np.sqrt(l1_norm_x * l1_norm_y))
+
+
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
 from enstop.plsa import plsa_fit, plsa_refit
 
@@ -160,15 +179,14 @@ def all_pairs_kl_divergence(distributions):
     return result
 
 
-# TODO: Once umap 0.4 is released enable this...
-# @numba.njit(fastmath=True, parallel=True)
-# def all_pairs_hellinger_distance(distributions):
-#     n = distributions.shape[0]
-#     result = np.zeros((n, n))
-#     for i in range(n):
-#         for j in range(n):
-#             result[i, j] = hellinger(distributions[i], distributions[j])
-#     return result
+@numba.njit(fastmath=True, parallel=True)
+def all_pairs_hellinger_distance(distributions):
+    n = distributions.shape[0]
+    result = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            result[i, j] = hellinger(distributions[i], distributions[j])
+    return result
 
 
 def generate_combined_topics_kl(all_topics, min_samples=5, min_cluster_size=5):
@@ -200,26 +218,24 @@ def generate_combined_topics_kl(all_topics, min_samples=5, min_cluster_size=5):
 
     return result
 
-# TODO: Once umap 0.4 is released enable this...
-# def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_size=5):
-#     distance_matrix = all_pairs_hellinger_distance(all_topics)
-#     labels = hdbscan.HDBSCAN(
-#         min_samples=min_samples, min_cluster_size=min_cluster_size, metric="precomputed"
-#     ).fit_predict(distance_matrix)
-#     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
-#     for i in range(labels.max() + 1):
-#         result[i] = np.mean(np.sqrt(all_topics[labels == i]), axis=0) ** 2
-#         result[i] /= result[i].sum()
-#
-#     return result
+def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_size=5):
+    distance_matrix = all_pairs_hellinger_distance(all_topics)
+    labels = hdbscan.HDBSCAN(
+        min_samples=min_samples, min_cluster_size=min_cluster_size, metric="precomputed"
+    ).fit_predict(distance_matrix)
+    result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
+    for i in range(labels.max() + 1):
+        result[i] = np.mean(np.sqrt(all_topics[labels == i]), axis=0) ** 2
+        result[i] /= result[i].sum()
+
+    return result
 
 
-# TODO: Once umap 0.4 is released enable hellinger distance...
 def generate_combined_topics_hellinger_umap(
     all_topics, min_samples=5, min_cluster_size=5, n_neighbors=15, reduced_dim=5
 ):
     embedding = umap.UMAP(
-        n_neighbors=n_neighbors, n_components=reduced_dim, metric="cosine"
+        n_neighbors=n_neighbors, n_components=reduced_dim, metric=hellinger,
     ).fit_transform(all_topics)
     labels = hdbscan.HDBSCAN(
         min_samples=min_samples, min_cluster_size=min_cluster_size
@@ -234,7 +250,7 @@ def generate_combined_topics_hellinger_umap(
 
 _topic_combiner = {
     "kl_divergence": generate_combined_topics_kl,
-    # "hellinger": generate_combined_topics_hellinger,
+    "hellinger": generate_combined_topics_hellinger,
     "hellinger_umap": generate_combined_topics_hellinger_umap,
 }
 
@@ -243,9 +259,9 @@ def ensemble_fit(
     X,
     estimated_n_topics=10,
     model="plsa",
-    init="nndsvd",
+    init="random",
     min_samples=3,
-    min_cluster_size=5,
+    min_cluster_size=4,
     n_starts=16,
     n_jobs=8,
     parallelism="dask",
@@ -303,9 +319,8 @@ def ensemble_fit(
             X_coo.row,
             X_coo.col,
             X_coo.data,
-            X_coo.shape[0],
-            X_coo.shape[1],
             stable_topics,
+            X_coo.shape[0],
             e_step_thresh=e_step_thresh,
         )
     elif model == "nmf":
@@ -329,17 +344,17 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         self,
         n_components=10,
         model="plsa",
-        init="nndsvd",
+        init="random",
         n_starts=16,
         min_samples=3,
-        min_cluster_size=5,
+        min_cluster_size=4,
         n_jobs=8,
         parallelism="dask",
         topic_combination="hellinger_umap",
         n_iter=100,
         n_iter_per_test=10,
         tolerance=0.001,
-        e_step_thresh=1e-16,
+        e_step_thresh=1e-32,
         lift_factor=1,
         beta_loss=1,
         alpha=0.0,
