@@ -25,24 +25,20 @@ from enstop.plsa import plsa_fit, plsa_refit
 
 
 def plsa_topics(X, k, **kwargs):
-    """Perform a boostrap sample from a corpus
-    of documents and fit the sample using pLSA
-    to give a set of topic vectors such that the
-    (z,w) entry of the returned array is the
-    probability P(w|z) of word w occuring given
-    the zth topic.
+    """Perform a boostrap sample from a corpus of documents and fit the sample using
+    pLSA to give a set of topic vectors such that the (z,w) entry of the returned
+    array is the probability P(w|z) of word w occuring given the zth topic.
 
     Parameters
     ----------
     X: sparse matrix of shape (n_docs, n_words)
-        The bag of words representation of the corpus
-        of documents.
+        The bag of words representation of the corpus of documents.
+
     k: int
         The number of topics to generate.
 
     kwargs:
-        Further keyword arguments that can be
-        passed on th the ``plsa_fit`` function.
+        Further keyword arguments that can be passed on th the ``plsa_fit`` function.
         Possibilities include:
             * ``init``
             * ``n_iter``
@@ -71,30 +67,25 @@ def plsa_topics(X, k, **kwargs):
 
 
 def nmf_topics(X, k, **kwargs):
-    """Perform a boostrap sample from a corpus
-    of documents and fit the sample using NMF
-    to give a set of topic vectors, normalized
-    such that the(z,w) entry of the returned
-    array is the probability P(w|z) of word w
-    occuring given the zth topic.
+    """Perform a boostrap sample from a corpus of documents and fit the sample using
+    NMF to give a set of topic vectors, normalized such that the(z,w) entry of the
+    returned array is the probability P(w|z) of word w occuring given the zth topic.
 
     Parameters
     ----------
     X: sparse matrix of shape (n_docs, n_words)
-        The bag of words representation of the corpus
-        of documents.
+        The bag of words representation of the corpus of documents.
+
     k: int
         The number of topics to generate.
 
     kwargs:
-        Further keyword arguments that can be
-        passed on th the ``plsa_fit`` function.
+        Further keyword arguments that can be passed on th the ``plsa_fit`` function.
         Possibilities include:
             * ``init``
-            * ``n_iter``
-            * ``n_iter_per_test``
-            * ``tolerance``
-            * ``e_step_threshold``
+            * ``beta_loss``
+            * ``alpha``
+            * ``solver``
 
     Returns
     -------
