@@ -50,7 +50,7 @@ required count matrix.
     news = fetch_20newsgroups(subset='all')
     data = CountVectorizer().fit_transform(news.data)
 
-    model = EnsembleTopics(estimated_n_topics=20).fit(data)
+    model = EnsembleTopics(n_components=20).fit(data)
     topics = model.components_
     doc_vectors = model.embedding_
 

@@ -18,7 +18,9 @@ from hdbscan._hdbscan_linkage import mst_linkage_core, label
 from hdbscan.hdbscan_ import _tree_to_labels
 import hdbscan
 import umap
-from umap.distances import hellinger
+
+# TODO: Once umap 0.4 is released enable this...
+# from umap.distances import hellinger
 
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
 from enstop.plsa import plsa_fit, plsa_refit
@@ -158,14 +160,15 @@ def all_pairs_kl_divergence(distributions):
     return result
 
 
-@numba.njit(fastmath=True, parallel=True)
-def all_pairs_hellinger_distance(distributions):
-    n = distributions.shape[0]
-    result = np.zeros((n, n))
-    for i in range(n):
-        for j in range(n):
-            result[i, j] = hellinger(distributions[i], distributions[j])
-    return result
+# TODO: Once umap 0.4 is released enable this...
+# @numba.njit(fastmath=True, parallel=True)
+# def all_pairs_hellinger_distance(distributions):
+#     n = distributions.shape[0]
+#     result = np.zeros((n, n))
+#     for i in range(n):
+#         for j in range(n):
+#             result[i, j] = hellinger(distributions[i], distributions[j])
+#     return result
 
 
 def generate_combined_topics_kl(all_topics, min_samples=5, min_cluster_size=5):
@@ -197,25 +200,26 @@ def generate_combined_topics_kl(all_topics, min_samples=5, min_cluster_size=5):
 
     return result
 
+# TODO: Once umap 0.4 is released enable this...
+# def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_size=5):
+#     distance_matrix = all_pairs_hellinger_distance(all_topics)
+#     labels = hdbscan.HDBSCAN(
+#         min_samples=min_samples, min_cluster_size=min_cluster_size, metric="precomputed"
+#     ).fit_predict(distance_matrix)
+#     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
+#     for i in range(labels.max() + 1):
+#         result[i] = np.mean(np.sqrt(all_topics[labels == i]), axis=0) ** 2
+#         result[i] /= result[i].sum()
+#
+#     return result
 
-def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_size=5):
-    distance_matrix = all_pairs_hellinger_distance(all_topics)
-    labels = hdbscan.HDBSCAN(
-        min_samples=min_samples, min_cluster_size=min_cluster_size, metric="precomputed"
-    ).fit_predict(distance_matrix)
-    result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
-    for i in range(labels.max() + 1):
-        result[i] = np.mean(np.sqrt(all_topics[labels == i]), axis=0) ** 2
-        result[i] /= result[i].sum()
 
-    return result
-
-
+# TODO: Once umap 0.4 is released enable hellinger distance...
 def generate_combined_topics_hellinger_umap(
     all_topics, min_samples=5, min_cluster_size=5, n_neighbors=15, reduced_dim=5
 ):
     embedding = umap.UMAP(
-        n_neighbors=n_neighbors, n_components=reduced_dim, metric="hellinger"
+        n_neighbors=n_neighbors, n_components=reduced_dim, metric="cosine"
     ).fit_transform(all_topics)
     labels = hdbscan.HDBSCAN(
         min_samples=min_samples, min_cluster_size=min_cluster_size
@@ -230,7 +234,7 @@ def generate_combined_topics_hellinger_umap(
 
 _topic_combiner = {
     "kl_divergence": generate_combined_topics_kl,
-    "hellinger": generate_combined_topics_hellinger,
+    # "hellinger": generate_combined_topics_hellinger,
     "hellinger_umap": generate_combined_topics_hellinger_umap,
 }
 
