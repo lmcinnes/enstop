@@ -600,9 +600,9 @@ def plsa_refit(
     topics,
     n_documents,
     n_iter=50,
-    n_iter_per_test=5,
-    tolerance=0.001,
-    e_step_thresh=1e-16,
+    n_iter_per_test=10,
+    tolerance=0.005,
+    e_step_thresh=1e-32,
 ):
     """Optimized routine for refitting values of P(z|d) given a fixed set of topics (
     i.e. P(w|z)). This allows fitting document vectors to a predefined set of topics

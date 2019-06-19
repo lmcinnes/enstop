@@ -221,7 +221,10 @@ def generate_combined_topics_kl(all_topics, min_samples=5, min_cluster_size=5):
 def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_size=5):
     distance_matrix = all_pairs_hellinger_distance(all_topics)
     labels = hdbscan.HDBSCAN(
-        min_samples=min_samples, min_cluster_size=min_cluster_size, metric="precomputed"
+        min_samples=min_samples,
+        min_cluster_size=min_cluster_size,
+        metric="precomputed",
+        cluster_selection_method='leaf',
     ).fit_predict(distance_matrix)
     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
     for i in range(labels.max() + 1):
@@ -238,7 +241,9 @@ def generate_combined_topics_hellinger_umap(
         n_neighbors=n_neighbors, n_components=reduced_dim, metric=hellinger,
     ).fit_transform(all_topics)
     labels = hdbscan.HDBSCAN(
-        min_samples=min_samples, min_cluster_size=min_cluster_size
+        min_samples=min_samples,
+        min_cluster_size=min_cluster_size,
+        cluster_selection_method='leaf',
     ).fit_predict(embedding)
     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
     for i in range(labels.max() + 1):
@@ -347,11 +352,11 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         init="random",
         n_starts=16,
         min_samples=3,
-        min_cluster_size=4,
+        min_cluster_size=5,
         n_jobs=8,
         parallelism="dask",
         topic_combination="hellinger_umap",
-        n_iter=100,
+        n_iter=80,
         n_iter_per_test=10,
         tolerance=0.001,
         e_step_thresh=1e-32,
@@ -435,7 +440,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             m,
             self.components_,
             n_iter=50,
-            n_iter_per_test=5,
+            n_iter_per_test=10,
             tolerance=0.001,
         )
 
