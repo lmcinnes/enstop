@@ -778,6 +778,7 @@ class PLSA(BaseEstimator, TransformerMixin):
     Machine learning 42.1-2 (2001): 177-196.
 
     """
+
     def __init__(
         self,
         n_components=10,

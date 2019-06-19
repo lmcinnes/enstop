@@ -22,6 +22,7 @@ import umap
 # TODO: Once umap 0.4 is released enable this...
 # from umap.distances import hellinger
 
+
 @numba.njit()
 def hellinger(x, y):
     result = 0.0
@@ -84,7 +85,7 @@ def plsa_topics(X, k, **kwargs):
         n_iter_per_test=kwargs.get("n_iter_per_test", 10),
         tolerance=kwargs.get("tolerance", 0.001),
         e_step_thresh=kwargs.get("e_step_thresh", 1e-16),
-        random_state=kwargs.get("random_state", None)
+        random_state=kwargs.get("random_state", None),
     )
     return topic_vocab
 
@@ -279,6 +280,7 @@ def generate_combined_topics_kl(all_topics, min_samples=5, min_cluster_size=5):
 
     return result
 
+
 def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_size=5):
     """Given a large list of topics select out a small list of stable topics
     by clustering the topics with HDBSCAN using Hellinger as a distance
@@ -306,7 +308,7 @@ def generate_combined_topics_hellinger(all_topics, min_samples=5, min_cluster_si
         min_samples=min_samples,
         min_cluster_size=min_cluster_size,
         metric="precomputed",
-        cluster_selection_method='leaf',
+        cluster_selection_method="leaf",
     ).fit_predict(distance_matrix)
     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
     for i in range(labels.max() + 1):
@@ -348,12 +350,12 @@ def generate_combined_topics_hellinger_umap(
         A set of M topics, one for each cluster found by HDBSCAN.
     """
     embedding = umap.UMAP(
-        n_neighbors=n_neighbors, n_components=reduced_dim, metric=hellinger,
+        n_neighbors=n_neighbors, n_components=reduced_dim, metric=hellinger
     ).fit_transform(all_topics)
     labels = hdbscan.HDBSCAN(
         min_samples=min_samples,
         min_cluster_size=min_cluster_size,
-        cluster_selection_method='leaf',
+        cluster_selection_method="leaf",
     ).fit_predict(embedding)
     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
     for i in range(labels.max() + 1):
@@ -659,6 +661,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
     Machine learning 42.1-2 (2001): 177-196.
 
     """
+
     def __init__(
         self,
         n_components=10,
