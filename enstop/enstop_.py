@@ -2,7 +2,7 @@ import numpy as np
 import numba
 from warnings import warn
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.utils import check_array
+from sklearn.utils import check_array, check_random_state
 from sklearn.decomposition import NMF, non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 import dask
@@ -66,6 +66,7 @@ def plsa_topics(X, k, **kwargs):
             * ``n_iter_per_test``
             * ``tolerance``
             * ``e_step_threshold``
+            * ``random_state``
 
     Returns
     -------
@@ -78,11 +79,12 @@ def plsa_topics(X, k, **kwargs):
     doc_topic, topic_vocab = plsa_fit(
         B,
         k,
-        init=kwargs.get("init", "nndsvd"),
+        init=kwargs.get("init", "random"),
         n_iter=kwargs.get("n_iter", 100),
         n_iter_per_test=kwargs.get("n_iter_per_test", 10),
         tolerance=kwargs.get("tolerance", 0.001),
         e_step_thresh=kwargs.get("e_step_thresh", 1e-16),
+        random_state=kwargs.get("random_state", None)
     )
     return topic_vocab
 
@@ -101,7 +103,7 @@ def nmf_topics(X, k, **kwargs):
         The number of topics to generate.
 
     kwargs:
-        Further keyword arguments that can be passed on th the ``plsa_fit`` function.
+        Further keyword arguments that can be passed on th the ``NMF`` class.
         Possibilities include:
             * ``init``
             * ``beta_loss``
@@ -122,6 +124,7 @@ def nmf_topics(X, k, **kwargs):
         beta_loss=kwargs.get("beta_loss", 1),
         alpha=kwargs.get("alpha", 0.0),
         solver=kwargs.get("solver", "mu"),
+        random_state=kwargs.get("random_state", None),
     ).fit(B)
     topics = nmf.components_.copy()
     normalize(topics, axis=1)
@@ -279,6 +282,7 @@ def ensemble_fit(
     beta_loss=1,
     alpha=0.0,
     solver="mu",
+    random_state=None,
 ):
 
     X = check_array(X, accept_sparse="csr")
@@ -304,6 +308,7 @@ def ensemble_fit(
         beta_loss=beta_loss,
         alpha=alpha,
         solver=solver,
+        random_state=random_state,
     )
 
     if topic_combination in _topic_combiner:
@@ -320,6 +325,7 @@ def ensemble_fit(
         normalize(stable_topics, axis=1)
 
     if model == "plsa":
+        rng = check_random_state(random_state)
         doc_vectors = plsa_refit(
             X_coo.row,
             X_coo.col,
@@ -327,6 +333,7 @@ def ensemble_fit(
             stable_topics,
             X_coo.shape[0],
             e_step_thresh=e_step_thresh,
+            rng=rng,
         )
     elif model == "nmf":
         doc_vectors, _, _ = non_negative_factorization(
@@ -364,6 +371,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         beta_loss=1,
         alpha=0.0,
         solver="mu",
+        random_state=None,
     ):
 
         self.n_components = n_components
@@ -383,6 +391,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         self.beta_loss = beta_loss
         self.alpha = alpha
         self.solver = solver
+        self.random_state = random_state
 
     def fit(self, X, y=None):
         self.fit_transform(X)
@@ -414,6 +423,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             self.beta_loss,
             self.alpha,
             self.solver,
+            self.random_state,
         )
         self.components_ = V
         self.embedding_ = U
@@ -432,6 +442,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
 
         n, m = X.shape
 
+        rng = check_random_state(self.random_state)
         result = plsa_refit(
             X.row,
             X.col,
@@ -442,6 +453,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             n_iter=50,
             n_iter_per_test=10,
             tolerance=0.001,
+            rng=rng,
         )
 
         return result

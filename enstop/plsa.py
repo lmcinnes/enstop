@@ -2,7 +2,7 @@ import numpy as np
 import numba
 
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.utils import check_array
+from sklearn.utils import check_array, check_random_state
 from sklearn.utils.extmath import randomized_svd
 from sklearn.decomposition import non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
@@ -246,7 +246,7 @@ def norm(x):
 
 
 @numba.jit(fastmath=True)
-def plsa_init(X, k, init="random"):
+def plsa_init(X, k, init="random", rng=np.random):
     """Initialize matrices for pLSA. Specifically, given data X, a number of topics
     k, and an initialization method, compute matrices for P(z|d) and P(w|z) that can
     be used to begin an EM optimization of pLSA.
@@ -275,6 +275,9 @@ def plsa_init(X, k, init="random"):
             * ``"nmf"``
         or a tuple of two ndarrays of shape (n_docs, n_topics) and (n_topics, n_words).
 
+    rng: RandomState instance (optional, default=np.random)
+        Seeded randomness generator. Used for random intialization.
+
     Returns
     -------
     p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
@@ -286,8 +289,8 @@ def plsa_init(X, k, init="random"):
     m = X.shape[1]
 
     if init == "random":
-        p_w_given_z = np.random.random((k, m))
-        p_z_given_d = np.random.random((n, k))
+        p_w_given_z = rng.random((k, m))
+        p_z_given_d = rng.random((n, k))
 
     elif init == "nndsvd":
         # Taken from sklearn NMF implementation
@@ -464,6 +467,7 @@ def plsa_fit(
     n_iter_per_test=10,
     tolerance=0.001,
     e_step_thresh=1e-32,
+    random_state=None,
 ):
     """Fit a pLSA model to a data matrix ``X`` with ``k`` topics, an initialized
     according to ``init``. This will run an EM method to optimize estimates of P(z|d)
@@ -502,6 +506,12 @@ def plsa_fit(
         Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
         below threshold then write a zero for P(z|w,d).
 
+    random_state: int, RandomState instance or None, (optional, default: None)
+        If int, random_state is the seed used by the random number generator;
+        If RandomState instance, random_state is the random number generator;
+        If None, the random number generator is the RandomState instance used
+        by `np.random`. Used in in initialization.
+
     Returns
     -------
     p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
@@ -509,7 +519,8 @@ def plsa_fit(
 
     """
 
-    p_z_given_d, p_w_given_z = plsa_init(X, k, init=init)
+    rng = check_random_state(random_state)
+    p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, random_state=rng)
 
     A = X.tocoo()
 
@@ -603,6 +614,7 @@ def plsa_refit(
     n_iter_per_test=10,
     tolerance=0.005,
     e_step_thresh=1e-32,
+    rng=np.random,
 ):
     """Optimized routine for refitting values of P(z|d) given a fixed set of topics (
     i.e. P(w|z)). This allows fitting document vectors to a predefined set of topics
@@ -647,6 +659,9 @@ def plsa_refit(
         Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
         below threshold then write a zero for P(z|w,d).
 
+    rng: RandomState instance (optional, default=np.random)
+        Seeded randomness generator. Used for initializing document vectors.
+
     Returns
     -------
     p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
@@ -656,7 +671,7 @@ def plsa_refit(
 
     k = topics.shape[0]
 
-    p_z_given_d = np.random.random((n_documents, k))
+    p_z_given_d = rng.random((n_documents, k))
     p_z_given_wd = np.zeros((X_vals.shape[0], k))
 
     norm_pdz = np.zeros(n_documents)
@@ -731,6 +746,12 @@ class PLSA(BaseEstimator, TransformerMixin):
         Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
         below threshold then write a zero for P(z|w,d).
 
+    random_state: int, RandomState instance or None, (optional, default: None)
+        If int, random_state is the seed used by the random number generator;
+        If RandomState instance, random_state is the random number generator;
+        If None, the random number generator is the RandomState instance used
+        by `np.random`. Used in in initialization.
+
     Attributes
     ----------
 
@@ -765,6 +786,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         n_iter_per_test=10,
         tolerance=0.001,
         e_step_thresh=1e-32,
+        random_state=None,
     ):
 
         self.n_components = n_components
@@ -773,6 +795,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         self.n_iter_per_test = n_iter_per_test
         self.tolerance = tolerance
         self.e_step_thresh = e_step_thresh
+        self.random_state = random_state
 
     def fit(self, X, y=None):
         """Learn the pLSA model for the data X and return the document vectors.
@@ -824,6 +847,7 @@ class PLSA(BaseEstimator, TransformerMixin):
             self.n_iter_per_test,
             self.tolerance,
             self.e_step_thresh,
+            self.random_state,
         )
         self.components_ = V
         self.embedding_ = U
@@ -854,6 +878,7 @@ class PLSA(BaseEstimator, TransformerMixin):
             X = X.tocoo()
 
         n, m = X.shape
+        rng = check_random_state(self.random_state)
 
         result = plsa_refit(
             X.row,
@@ -865,6 +890,7 @@ class PLSA(BaseEstimator, TransformerMixin):
             n_iter=50,
             n_iter_per_test=5,
             tolerance=0.001,
+            rng=rng,
         )
 
         return result
