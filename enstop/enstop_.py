@@ -75,7 +75,8 @@ def plsa_topics(X, k, **kwargs):
         The topics generated from the bootstrap sample.
     """
     A = X.tocsr()
-    bootstrap_sample_indices = np.random.randint(0, A.shape[0], size=A.shape[0])
+    rng = check_random_state(kwargs.get("random_state", None))
+    bootstrap_sample_indices = rng.randint(0, A.shape[0], size=A.shape[0])
     B = A[bootstrap_sample_indices]
     doc_topic, topic_vocab = plsa_fit(
         B,
@@ -117,7 +118,8 @@ def nmf_topics(X, k, **kwargs):
         The topics generated from the bootstrap sample.
     """
     A = X.tocsr()
-    bootstrap_sample_indices = np.random.randint(0, A.shape[0], size=A.shape[0])
+    rng = check_random_state(kwargs.get("random_state", None))
+    bootstrap_sample_indices = rng.randint(0, A.shape[0], size=A.shape[0])
     B = A[bootstrap_sample_indices]
     nmf = NMF(
         n_components=k,
@@ -519,15 +521,11 @@ def ensemble_fit(
         normalize(stable_topics, axis=1)
 
     if model == "plsa":
-        rng = check_random_state(random_state)
         doc_vectors = plsa_refit(
-            X_coo.row,
-            X_coo.col,
-            X_coo.data,
+            X,
             stable_topics,
-            X_coo.shape[0],
             e_step_thresh=e_step_thresh,
-            rng=rng,
+            random_state=random_state,
         )
     elif model == "nmf":
         doc_vectors, _, _ = non_negative_factorization(
@@ -794,21 +792,15 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         else:
             X = X.tocoo()
 
-        n, m = X.shape
-
-        rng = check_random_state(self.random_state)
         result = plsa_refit(
-            X.row,
-            X.col,
-            X.vals,
-            n,
-            m,
+            X,
             self.components_,
             n_iter=50,
-            n_iter_per_test=10,
+            n_iter_per_test=5,
             tolerance=0.001,
-            rng=rng,
+            random_state=self.random_state,
         )
+
 
         return result
 

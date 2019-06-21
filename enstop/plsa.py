@@ -289,8 +289,8 @@ def plsa_init(X, k, init="random", rng=np.random):
     m = X.shape[1]
 
     if init == "random":
-        p_w_given_z = rng.random((k, m))
-        p_z_given_d = rng.random((n, k))
+        p_w_given_z = rng.rand(k, m)
+        p_z_given_d = rng.rand(n, k)
 
     elif init == "nndsvd":
         # Taken from sklearn NMF implementation
@@ -604,17 +604,16 @@ def plsa_refit_m_step(
 
 
 @numba.njit(nogil=True)
-def plsa_refit(
+def plsa_refit_inner(
     X_rows,
     X_cols,
     X_vals,
     topics,
-    n_documents,
+    p_z_given_d,
     n_iter=50,
     n_iter_per_test=10,
     tolerance=0.005,
     e_step_thresh=1e-32,
-    rng=np.random,
 ):
     """Optimized routine for refitting values of P(z|d) given a fixed set of topics (
     i.e. P(w|z)). This allows fitting document vectors to a predefined set of topics
@@ -641,8 +640,8 @@ def plsa_refit(
     topics: array of shape (n_topics, n_words)
         The fixed topics against which to fit the values of P(z|d).
 
-    n_documents: int
-        The number of distinct documents in the corpus (rows of X).
+    p_z_given_d: array of shape (n_docs, n_topics)
+        The current estimates of values for P(z|d)
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -659,24 +658,16 @@ def plsa_refit(
         Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
         below threshold then write a zero for P(z|w,d).
 
-    rng: RandomState instance (optional, default=np.random)
-        Seeded randomness generator. Used for initializing document vectors.
-
     Returns
     -------
     p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
         The resulting model values of P(z|d) and P(w|z)
 
     """
-
     k = topics.shape[0]
+    p_z_given_wd = np.zeros((X_rows.shape[0], k))
 
-    p_z_given_d = rng.random((n_documents, k))
-    p_z_given_wd = np.zeros((X_vals.shape[0], k))
-
-    norm_pdz = np.zeros(n_documents)
-
-    normalize(p_z_given_d, axis=1)
+    norm_pdz = np.zeros(p_z_given_d.shape[0])
 
     previous_log_likelihood = log_likelihood(
         X_rows, X_cols, X_vals, topics, p_z_given_d
@@ -703,6 +694,77 @@ def plsa_refit(
                     previous_log_likelihood = current_log_likelihood
 
     return p_z_given_d
+
+
+def plsa_refit(
+    X,
+    topics,
+    n_iter=50,
+    n_iter_per_test=10,
+    tolerance=0.005,
+    e_step_thresh=1e-32,
+    random_state=None,
+):
+    """Routine for refitting values of P(z|d) given a fixed set of topics (
+    i.e. P(w|z)). This allows fitting document vectors to a predefined set of topics
+    (given, for example, by an ensemble result).
+
+    Parameters
+    ----------
+    X: sparse matrix of shape (n_docs, n_words)
+        The data matrix pLSA is attempting to fit to.
+
+    topics: array of shape (n_topics, n_words)
+        The fixed topics against which to fit the values of P(z|d).
+
+    n_iter: int
+        The maximum number iterations of EM to perform
+
+    n_iter_per_test: int
+        The number of iterations between tests for relative improvement in
+        log-likelihood.
+
+    tolerance: float
+        The threshold of relative improvement in log-likelihood required to continue
+        iterations.
+
+    e_step_thresh: float (optional, default=1e-32)
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
+
+    random_state: int, RandomState instance or None, (optional, default: None)
+        If int, random_state is the seed used by the random number generator;
+        If RandomState instance, random_state is the random number generator;
+        If None, the random number generator is the RandomState instance used
+        by `np.random`. Used in in initialization.
+
+    Returns
+    -------
+    p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
+        The resulting model values of P(z|d) and P(w|z)
+
+    """
+    A = X.tocoo()
+    k = topics.shape[0]
+
+    rng = check_random_state(random_state)
+    p_z_given_d = rng.rand(A.shape[0], k)
+    normalize(p_z_given_d, axis=1)
+
+    p_z_given_d = plsa_refit_inner(
+        A.row,
+        A.col,
+        A.data,
+        topics,
+        p_z_given_d,
+        n_iter=n_iter,
+        n_iter_per_test=n_iter_per_test,
+        tolerance=tolerance,
+        e_step_thresh=e_step_thresh,
+    )
+
+    return p_z_given_d
+
 
 
 class PLSA(BaseEstimator, TransformerMixin):
@@ -878,20 +940,13 @@ class PLSA(BaseEstimator, TransformerMixin):
         else:
             X = X.tocoo()
 
-        n, m = X.shape
-        rng = check_random_state(self.random_state)
-
         result = plsa_refit(
-            X.row,
-            X.col,
-            X.vals,
-            n,
-            m,
+            X,
             self.components_,
             n_iter=50,
             n_iter_per_test=5,
             tolerance=0.001,
-            rng=rng,
+            random_state=self.random_state,
         )
 
         return result
