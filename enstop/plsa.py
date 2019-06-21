@@ -520,7 +520,7 @@ def plsa_fit(
     """
 
     rng = check_random_state(random_state)
-    p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, random_state=rng)
+    p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, rng=rng)
 
     A = X.tocoo()
 
