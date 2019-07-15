@@ -101,7 +101,7 @@ To manually install this package:
 Help and Support
 ----------------
 
-Some basic example notebooks are available `here <https://github.com/lmcinnes/enstop/notebooks>`_.
+Some basic example notebooks are available `here <./notebooks>`_.
 
 Documentation is coming. This project is still very young. If you need help, or have
 problems please `open an issue <https://github.com/lmcinnes/enstop/issues/new>`_
