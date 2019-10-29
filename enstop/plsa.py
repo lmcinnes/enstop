@@ -245,7 +245,6 @@ def norm(x):
     return np.sqrt(result)
 
 
-@numba.jit(fastmath=True)
 def plsa_init(X, k, init="random", rng=np.random):
     """Initialize matrices for pLSA. Specifically, given data X, a number of topics
     k, and an initialization method, compute matrices for P(z|d) and P(w|z) that can
