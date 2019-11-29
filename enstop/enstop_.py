@@ -481,12 +481,12 @@ def ensemble_fit(
         produced by the ensemble.
     """
 
-    X = check_array(X, accept_sparse="csr")
+    X = check_array(X, accept_sparse="csr", dtype=np.float32)
 
     if issparse(X):
         X_coo = X.tocoo()
     else:
-        X_coo = coo_matrix(X)
+        X_coo = coo_matrix(X, dtype=np.float32)
 
     all_topics = ensemble_of_topics(
         X_coo,
