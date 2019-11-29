@@ -10,7 +10,19 @@ from scipy.sparse import issparse, csr_matrix, coo_matrix
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
 
 
-@numba.njit(fastmath=True, nogil=True)
+@numba.njit(
+    'f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint16,
+        "d": numba.types.uint16,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint16,
+        "norm": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
 def plsa_e_step(
     X_rows,
     X_cols,
@@ -82,7 +94,19 @@ def plsa_e_step(
     return p_z_given_wd
 
 
-@numba.njit(fastmath=True, nogil=True)
+@numba.njit(
+    'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint16,
+        "d": numba.types.uint16,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint16,
+        "s": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
 def plsa_m_step(
     X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
 ):
@@ -164,7 +188,21 @@ def plsa_m_step(
     return p_w_given_z, p_z_given_d
 
 
-@numba.njit(fastmath=True, nogil=True)
+@numba.njit(
+    'f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint16,
+        "d": numba.types.uint16,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint16,
+        "x": numba.types.float32,
+        "result": numba.types.float32,
+        "p_w_given_d": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
 def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     """Compute the log-likelihood of observing the data X given estimates for P(w|z)
     and P(z|d). The likelihood of X_{w,d} under the model is given by X_{w,d} P(w|d)
@@ -222,7 +260,7 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     return result
 
 
-@numba.njit(fastmath=True, nogil=True)
+@numba.njit('f4(f4[::1])', fastmath=True, nogil=True)
 def norm(x):
     """Numba compilable routine for computing the l2-norm
     of a given vector x.
@@ -414,10 +452,10 @@ def plsa_fit_inner(
     k = p_z_given_d.shape[1]
     n = p_z_given_d.shape[0]
 
-    p_z_given_wd = np.zeros((X_vals.shape[0], k))
+    p_z_given_wd = np.zeros((X_vals.shape[0], k), dtype=np.float32)
 
-    norm_pwz = np.zeros(k)
-    norm_pdz = np.zeros(n)
+    norm_pwz = np.zeros(k, dtype=np.float32)
+    norm_pdz = np.zeros(n, dtype=np.float32)
 
     previous_log_likelihood = log_likelihood(
         X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
@@ -520,8 +558,10 @@ def plsa_fit(
 
     rng = check_random_state(random_state)
     p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, rng=rng)
+    p_z_given_d = p_z_given_d.astype(np.float32, order='C')
+    p_w_given_z = p_w_given_z.astype(np.float32, order='C')
 
-    A = X.tocoo()
+    A = X.tocoo().astype(np.float32)
 
     p_z_given_d, p_w_given_z = plsa_fit_inner(
         A.row,
