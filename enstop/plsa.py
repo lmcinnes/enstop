@@ -578,7 +578,19 @@ def plsa_fit(
     return p_z_given_d, p_w_given_z
 
 
-@numba.njit(nogil=True)
+@numba.njit(
+    'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint16,
+        "d": numba.types.uint16,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint16,
+        "s": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
 def plsa_refit_m_step(
     X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pdz
 ):
@@ -642,7 +654,7 @@ def plsa_refit_m_step(
     return p_w_given_z, p_z_given_d
 
 
-@numba.njit(nogil=True)
+@numba.njit(fastmath=True, nogil=True)
 def plsa_refit_inner(
     X_rows,
     X_cols,
