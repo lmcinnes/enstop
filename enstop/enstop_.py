@@ -190,6 +190,8 @@ def ensemble_of_topics(
         )
     elif parallelism == "joblib" and not _HAVE_JOBLIB:
         raise ValueError("Joblib was not correctly imported and is unavailable")
+    elif parallelism == "none":
+        topics = [create_topics(X, k, **kwargs) for i in range(n_runs)]
     else:
         raise ValueError(
             "Unrecognized parallelism {}; should be one of {}".format(
@@ -432,7 +434,7 @@ def ensemble_fit(
         The number of parallel jobs to run at a time.
 
     parallelism: string (optional, default="dask")
-        The parallelism model to use. Should be one of "dask" or "joblib".
+        The parallelism model to use. Should be one of "dask" or "joblib" or "none".
 
     topic_combination: string (optional, default="hellinger_umap")
         The method of comnining ensemble topics into a set of stable topics. Should be one of:
