@@ -1,5 +1,6 @@
 import numpy as np
 import numba
+from numba import cuda
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
@@ -14,10 +15,10 @@ from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_lo
     'f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)',
     locals={
         "k": numba.types.uint16,
-        "w": numba.types.uint16,
-        "d": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
         "z": numba.types.uint16,
-        "nz_idx": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
         "norm": numba.types.float32,
     },
     fastmath=True,
@@ -94,14 +95,96 @@ def plsa_e_step(
     return p_z_given_wd
 
 
+@cuda.jit(
+    'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1])',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
+        "norm": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
+def plsa_e_step_cuda(
+    X_rows,
+    X_cols,
+    X_vals,
+    p_w_given_z,
+    p_z_given_d,
+    p_z_given_wd,
+    probability_threshold=1e-32,
+):
+    """Perform the E-step of pLSA optimization. This amounts to computing the
+    probability of each topic given each word document pair. The computation
+    implements
+
+    P(z|w,d) = \frac{P(z|w)P(d|z)}{\sum_{z=1}^k P(z|w)P(d|z)}.
+
+    This routine is optimized to work with sparse matrices such that P(z|w,d)
+    is only computed for w, d such that X_{w,d} is non-zero, where X is the
+    data matrix.
+
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
+
+
+    Parameters
+    ----------
+    X_rows: array of shape (nnz,)
+        For each non-zero entry of X, the row of the entry.
+
+    X_cols: array of shape (nnz,)
+        For each non-zero entry of X, the column of the
+        entry.
+
+    X_vals: array of shape (nnz,)
+        For each non-zero entry of X, the value of entry.
+
+    p_w_given_z: array of shape (n_topics, n_words)
+        The current estimates of values for P(w|z)
+
+    p_z_given_d: array of shape (n_docs, n_topics)
+        The current estimates of values for P(z|d)
+
+    p_z_given_wd: array of shape (nnz, n_topics)
+        The result array to write new estimates of P(z|w,d) to.
+
+    probability_threshold: float (optional, default=1e-32)
+        Option to promote sparsity. If the value of P(w|z)P(z|d) falls below
+        threshold then write a zero for P(z|w,d).
+
+    """
+    k = p_w_given_z.shape[0]
+    nz_idx = cuda.grid()
+
+    if nz_idx < X_rows.shape[0]:
+        d = X_rows[nz_idx]
+        w = X_cols[nz_idx]
+
+        norm = 0.0
+        for z in range(k):
+            v = p_w_given_z[z, w] * p_z_given_d[d, z]
+            if v > probability_threshold:
+                p_z_given_wd[nz_idx, z] = v
+                norm += p_z_given_wd[nz_idx, z]
+            else:
+                p_z_given_wd[nz_idx, z] = 0.0
+        for z in range(k):
+            if norm > 0:
+                p_z_given_wd[nz_idx, z] /= norm
+
+
 @numba.njit(
     'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
     locals={
         "k": numba.types.uint16,
-        "w": numba.types.uint16,
-        "d": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
         "z": numba.types.uint16,
-        "nz_idx": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
         "s": numba.types.float32,
     },
     fastmath=True,
@@ -188,14 +271,122 @@ def plsa_m_step(
     return p_w_given_z, p_z_given_d
 
 
+@cuda.jit(
+    'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
+        "s": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
+def plsa_m_step_cuda_core(
+    X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
+):
+    """Perform the M-step of pLSA optimization. This amounts to using the estimates
+    of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation implements
+
+    P(w|z) = \frac{\sum_{d\in D} X_{w,d}P(z|w,d)}{\sum_{d,z} X_{w,d}P(z|w,d)}
+    P(z|d) = \frac{\sum_{w\in V} X_{w,d}P(z|w,d)}{\sum_{w,d} X_{w,d}P(z|w,d)}
+
+    This routine is optimized to work with sparse matrices such that P(z|w,d) is only
+    computed for w, d such that X_{w,d} is non-zero, where X is the data matrix.
+
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
+
+    Parameters
+    ----------
+    X_rows: array of shape (nnz,)
+        For each non-zero entry of X, the row of the entry.
+
+    X_cols: array of shape (nnz,)
+        For each non-zero entry of X, the column of the
+        entry.
+
+    X_vals: array of shape (nnz,)
+        For each non-zero entry of X, the value of entry.
+
+    p_w_given_z: array of shape (n_topics, n_words)
+        The result array to write new estimates of P(w|z) to.
+
+    p_z_given_d: array of shape (n_docs, n_topics)
+        The result array to write new estimates of P(z|d) to.
+
+    p_z_given_wd: array of shape (nnz, n_topics)
+        The current estimates for P(z|w,d)
+
+    norm_pwz: array of shape (n_topics,)
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
+
+    norm_pdz: array of shape (n_docs,)
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
+
+    """
+
+    k = p_z_given_wd.shape[1]
+    n = p_z_given_d.shape[0]
+    m = p_w_given_z.shape[1]
+
+    nz_idx = cuda.grid(1)
+
+    if nz_idx < X_rows.shape[0]:
+        d = X_rows[nz_idx]
+        w = X_cols[nz_idx]
+        x = X_vals[nz_idx]
+
+        for z in range(k):
+            s = x * p_z_given_wd[nz_idx, z]
+
+            p_w_given_z[z, w] += s
+            p_z_given_d[d, z] += s
+
+            norm_pwz[z] += s
+            norm_pdz[d] += s
+
+
+@numba.njit(
+    'void(f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
+    },
+    fastmath=True,
+    nogil=True,
+
+)
+def plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz):
+
+    k = p_z_given_d.shape[1]
+    n = p_z_given_d.shape[0]
+    m = p_w_given_z.shape[1]
+
+    for z in range(k):
+        for w in range(m):
+            if norm_pwz[z] > 0:
+                p_w_given_z[z, w] /= norm_pwz[z]
+        for d in range(n):
+            if norm_pdz[d] > 0:
+                p_z_given_d[d, z] /= norm_pdz[d]
+
+
 @numba.njit(
     'f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])',
     locals={
         "k": numba.types.uint16,
-        "w": numba.types.uint16,
-        "d": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
         "z": numba.types.uint16,
-        "nz_idx": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
         "x": numba.types.float32,
         "result": numba.types.float32,
         "p_w_given_d": numba.types.float32,
@@ -496,6 +687,151 @@ def plsa_fit_inner(
     return p_z_given_d, p_w_given_z
 
 
+def plsa_fit_inner_cuda(
+    X_rows,
+    X_cols,
+    X_vals,
+    p_w_given_z,
+    p_z_given_d,
+    n_iter=100,
+    n_iter_per_test=10,
+    tolerance=0.001,
+    e_step_thresh=1e-32,
+):
+    """Internal loop of EM steps required to optimize pLSA, along with relative
+    convergence tests with respect to the log-likelihood of observing the data under
+    the model.
+
+    The EM looping will stop when either ``n_iter`` iterations have been reached,
+    or if the relative improvement in log-likelihood over the last
+    ``n_iter_per_test`` steps is under ``threshold``.
+
+    This function is designed to wrap the internals of the EM process in a numba
+    compilable loop, and is not the preferred entry point for fitting a plsa model.
+
+    Parameters
+    ----------
+    X_rows: array of shape (nnz,)
+        For each non-zero entry of X, the row of the entry.
+
+    X_cols: array of shape (nnz,)
+        For each non-zero entry of X, the column of the
+        entry.
+
+    X_vals: array of shape (nnz,)
+        For each non-zero entry of X, the value of entry.
+
+    p_w_given_z: array of shape (n_topics, n_words)
+        The current estimates of values for P(w|z)
+
+    p_z_given_d: array of shape (n_docs, n_topics)
+        The current estimates of values for P(z|d)
+
+    n_iter: int
+        The maximum number iterations of EM to perform
+
+    n_iter_per_test: int
+        The number of iterations between tests for
+        relative improvement in log-likelihood.
+
+    tolerance: float
+        The threshold of relative improvement in
+        log-likelihood required to continue iterations.
+
+    e_step_thresh: float (optional, default=1e-32)
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
+
+    Returns
+    -------
+    p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
+        The resulting model values of P(z|d) and P(w|z)
+
+    """
+    threads_per_block = 128
+    blocks_per_grid = ((X_rows.shape[0] + (threads_per_block - 1))
+                       // threads_per_block)
+
+    k = p_z_given_d.shape[1]
+    n = p_z_given_d.shape[0]
+
+    p_z_given_wd = np.zeros((X_vals.shape[0], k), dtype=np.float32)
+
+    norm_pwz = np.zeros(k, dtype=np.float32)
+    norm_pdz = np.zeros(n, dtype=np.float32)
+
+    previous_log_likelihood = log_likelihood(
+        X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
+    )
+
+    x_rows = cuda.to_device(X_rows)
+    x_cols = cuda.to_device(X_cols)
+    x_vals = cuda.to_device(X_vals)
+
+    pw_z = cuda.to_device(p_w_given_z)
+    pz_d = cuda.to_device(p_z_given_d)
+    pz_wd = cuda.to_device(p_z_given_wd)
+
+    n_pwz = cuda.to_device(norm_pwz)
+    n_pdz = cuda.to_device(norm_pdz)
+
+    for i in range(n_iter):
+
+        plsa_e_step_cuda[blocks_per_grid, threads_per_block](
+            x_rows,
+            x_cols,
+            x_vals,
+            pw_z,
+            pz_d,
+            pz_wd,
+            e_step_thresh,
+        )
+
+        cuda.synchronize()
+
+        pw_z[:] = 0
+        pz_d[:] = 0
+        n_pwz[:] = 0
+        n_pdz[:] = 0
+
+        plsa_m_step_cuda_core[blocks_per_grid, threads_per_block](
+            x_rows,
+            x_cols,
+            x_vals,
+            pw_z,
+            pz_d,
+            pz_wd,
+            n_pwz,
+            n_pdz,
+        )
+
+        cuda.synchronize()
+
+        pw_z.copy_to_host(p_w_given_z)
+        pz_d.copy_to_host(p_z_given_d)
+        n_pwz.copy_to_host(norm_pwz)
+        n_pdz.copy_to_host(norm_pdz)
+
+        plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz)
+
+        pw_z = cuda.to_device(p_w_given_z)
+        pz_d = cuda.to_device(p_z_given_d)
+        n_pwz = cuda.to_device(norm_pwz)
+        n_pdz = cuda.to_device(norm_pdz)
+
+        if i % n_iter_per_test == 0:
+            current_log_likelihood = log_likelihood(
+                X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
+            )
+            change = np.abs(current_log_likelihood - previous_log_likelihood)
+            if change / np.abs(current_log_likelihood) < tolerance:
+                break
+            else:
+                previous_log_likelihood = current_log_likelihood
+
+    return p_z_given_d, p_w_given_z
+
+
 def plsa_fit(
     X,
     k,
@@ -563,17 +899,32 @@ def plsa_fit(
 
     A = X.tocoo().astype(np.float32)
 
-    p_z_given_d, p_w_given_z = plsa_fit_inner(
-        A.row,
-        A.col,
-        A.data,
-        p_w_given_z,
-        p_z_given_d,
-        n_iter,
-        n_iter_per_test,
-        tolerance,
-        e_step_thresh,
-    )
+    if cuda.is_available():
+        # Use GPU accelerated EM
+        p_z_given_d, p_w_given_z = plsa_fit_inner_cuda(
+            A.row,
+            A.col,
+            A.data,
+            p_w_given_z,
+            p_z_given_d,
+            n_iter,
+            n_iter_per_test,
+            tolerance,
+            e_step_thresh,
+        )
+    else:
+        # CPU version
+        p_z_given_d, p_w_given_z = plsa_fit_inner(
+            A.row,
+            A.col,
+            A.data,
+            p_w_given_z,
+            p_z_given_d,
+            n_iter,
+            n_iter_per_test,
+            tolerance,
+            e_step_thresh,
+        )
 
     return p_z_given_d, p_w_given_z
 
