@@ -815,6 +815,7 @@ def plsa_fit_inner_cuda(
         plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz)
 
         if i % n_iter_per_test == 0:
+            print(current_log_likelihood)
             current_log_likelihood = log_likelihood(
                 X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
             )
@@ -902,7 +903,7 @@ def plsa_fit(
 
     A = X.tocoo().astype(np.float32)
 
-    if cuda.is_available() and False:
+    if cuda.is_available():# and False:
         # Use GPU accelerated EM
         p_z_given_d, p_w_given_z = plsa_fit_inner_cuda(
             A.row,
@@ -1153,7 +1154,7 @@ def plsa_refit(
     k = topics.shape[0]
 
     rng = check_random_state(random_state)
-    p_z_given_d = rng.rand(A.shape[0], k, dtype=np.float32)
+    p_z_given_d = rng.rand(A.shape[0], k).astype(np.float32)
     normalize(p_z_given_d, axis=1)
 
     p_z_given_d = plsa_refit_inner(
