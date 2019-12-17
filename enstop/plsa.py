@@ -814,11 +814,6 @@ def plsa_fit_inner_cuda(
 
         plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz)
 
-        pw_z = cuda.to_device(p_w_given_z)
-        pz_d = cuda.to_device(p_z_given_d)
-        n_pwz = cuda.to_device(norm_pwz)
-        n_pdz = cuda.to_device(norm_pdz)
-
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
                 X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
@@ -828,6 +823,14 @@ def plsa_fit_inner_cuda(
                 break
             else:
                 previous_log_likelihood = current_log_likelihood
+
+        pw_z = cuda.to_device(p_w_given_z)
+        pz_d = cuda.to_device(p_z_given_d)
+        n_pwz = cuda.to_device(norm_pwz)
+        n_pdz = cuda.to_device(norm_pdz)
+
+    pw_z.copy_to_host(p_w_given_z)
+    pz_d.copy_to_host(p_z_given_d)
 
     return p_z_given_d, p_w_given_z
 

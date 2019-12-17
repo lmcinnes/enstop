@@ -520,6 +520,8 @@ def ensemble_fit(
         stable_topics **= lift_factor
         normalize(stable_topics, axis=1)
 
+    stable_topics = stable_topics.astype(np.float32, order='C')
+
     if model == "plsa":
         doc_vectors = plsa_refit(
             X,
