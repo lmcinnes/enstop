@@ -815,11 +815,11 @@ def plsa_fit_inner_cuda(
         plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz)
 
         if i % n_iter_per_test == 0:
-            print(current_log_likelihood)
             current_log_likelihood = log_likelihood(
                 X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
             )
             change = np.abs(current_log_likelihood - previous_log_likelihood)
+            print(current_log_likelihood, change)
             if change / np.abs(current_log_likelihood) < tolerance:
                 break
             else:
