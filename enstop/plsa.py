@@ -158,7 +158,7 @@ def plsa_e_step_cuda(
 
     """
     k = p_w_given_z.shape[0]
-    nz_idx = cuda.grid()
+    nz_idx = cuda.grid(1)
 
     if nz_idx < X_rows.shape[0]:
         d = X_rows[nz_idx]
