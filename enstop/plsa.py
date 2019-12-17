@@ -1070,9 +1070,9 @@ def plsa_refit_inner(
 
     """
     k = topics.shape[0]
-    p_z_given_wd = np.zeros((X_rows.shape[0], k))
+    p_z_given_wd = np.zeros((X_rows.shape[0], k), dtype=np.float32)
 
-    norm_pdz = np.zeros(p_z_given_d.shape[0])
+    norm_pdz = np.zeros(p_z_given_d.shape[0], dtype=np.float32)
 
     previous_log_likelihood = log_likelihood(
         X_rows, X_cols, X_vals, topics, p_z_given_d
@@ -1153,7 +1153,7 @@ def plsa_refit(
     k = topics.shape[0]
 
     rng = check_random_state(random_state)
-    p_z_given_d = rng.rand(A.shape[0], k)
+    p_z_given_d = rng.rand(A.shape[0], k, dtype=np.float32)
     normalize(p_z_given_d, axis=1)
 
     p_z_given_d = plsa_refit_inner(
