@@ -96,7 +96,7 @@ def plsa_e_step(
 
 
 @cuda.jit(
-    'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1])',
+    'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f8)',
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
