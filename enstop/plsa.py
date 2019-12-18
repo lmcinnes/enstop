@@ -903,7 +903,7 @@ def plsa_fit(
 
     A = X.tocoo().astype(np.float32)
 
-    if cuda.is_available() and False:
+    if cuda.is_available(): # and False:
         # Use GPU accelerated EM
         p_z_given_d, p_w_given_z = plsa_fit_inner_cuda(
             A.row,
