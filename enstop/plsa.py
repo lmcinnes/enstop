@@ -190,6 +190,7 @@ def plsa_e_step_cuda(
     fastmath=True,
     nogil=True,
 )
+# @numba.njit(fastmath=True,nogil=True)
 def plsa_m_step(
     X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
 ):
@@ -393,6 +394,7 @@ def plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz):
     fastmath=True,
     nogil=True,
 )
+# @numba.njit(fastmath=True,nogil=True)
 def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     """Compute the log-likelihood of observing the data X given estimates for P(w|z)
     and P(z|d). The likelihood of X_{w,d} under the model is given by X_{w,d} P(w|d)
@@ -935,10 +937,10 @@ def plsa_fit(
     "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
-        "w": numba.types.uint16,
-        "d": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
         "z": numba.types.uint16,
-        "nz_idx": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
         "s": numba.types.float32,
     },
     fastmath=True,
@@ -1007,7 +1009,13 @@ def plsa_refit_m_step(
     return p_w_given_z, p_z_given_d
 
 
-@numba.njit(fastmath=True, nogil=True)
+@numba.njit(
+    locals={
+        "e_step_thresh": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True
+)
 def plsa_refit_inner(
     X_rows,
     X_cols,
@@ -1154,6 +1162,8 @@ def plsa_refit(
     rng = check_random_state(random_state)
     p_z_given_d = rng.rand(A.shape[0], k).astype(np.float32)
     normalize(p_z_given_d, axis=1)
+    p_z_given_d = p_z_given_d.astype(np.float32)
+    topics = topics.astype(np.float32)
 
     p_z_given_d = plsa_refit_inner(
         A.row,
