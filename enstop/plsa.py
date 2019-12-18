@@ -446,7 +446,8 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
         for z in range(k):
             p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
 
-        result += x * np.log(p_w_given_d)
+        if p_w_given_d > 0.0:
+            result += x * np.log(p_w_given_d)
 
     return result
 
