@@ -770,8 +770,8 @@ def plsa_fit_inner_cuda(
     pz_d = cuda.to_device(p_z_given_d)
     pz_wd = cuda.to_device(p_z_given_wd)
 
-    n_pwz = cuda.to_device(norm_pwz)
-    n_pdz = cuda.to_device(norm_pdz)
+    # n_pwz = cuda.to_device(norm_pwz)
+    # n_pdz = cuda.to_device(norm_pdz)
 
     for i in range(n_iter):
 
@@ -795,6 +795,7 @@ def plsa_fit_inner_cuda(
         pw_z.copy_to_host(p_w_given_z)
         pz_d.copy_to_host(p_z_given_d)
 
+        pz_wd.copy_to_host(p_z_given_wd)
         plsa_m_step(
             X_rows,
             X_cols,
@@ -824,8 +825,8 @@ def plsa_fit_inner_cuda(
 
         pw_z = cuda.to_device(p_w_given_z)
         pz_d = cuda.to_device(p_z_given_d)
-        n_pwz = cuda.to_device(norm_pwz)
-        n_pdz = cuda.to_device(norm_pdz)
+        # n_pwz = cuda.to_device(norm_pwz)
+        # n_pdz = cuda.to_device(norm_pdz)
 
     pw_z.copy_to_host(p_w_given_z)
     pz_d.copy_to_host(p_z_given_d)
