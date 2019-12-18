@@ -12,7 +12,7 @@ from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_lo
 
 
 @numba.njit(
-    'f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)',
+    "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -96,7 +96,7 @@ def plsa_e_step(
 
 
 @cuda.jit(
-    'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f8)',
+    "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f8)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -178,7 +178,7 @@ def plsa_e_step_cuda(
 
 
 @numba.njit(
-    'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -272,7 +272,7 @@ def plsa_m_step(
 
 
 @cuda.jit(
-    'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -352,7 +352,7 @@ def plsa_m_step_cuda_core(
 
 
 @numba.njit(
-    'void(f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    "void(f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -362,7 +362,6 @@ def plsa_m_step_cuda_core(
     },
     fastmath=True,
     nogil=True,
-
 )
 def plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz):
 
@@ -380,7 +379,7 @@ def plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz):
 
 
 @numba.njit(
-    'f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])',
+    "f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -446,13 +445,12 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
         for z in range(k):
             p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
 
-        if p_w_given_d > 0.0:
-            result += x * np.log(p_w_given_d)
+        result += x * np.log(p_w_given_d)
 
     return result
 
 
-@numba.njit('f4(f4[::1])', fastmath=True, nogil=True)
+@numba.njit("f4(f4[::1])", fastmath=True, nogil=True)
 def norm(x):
     """Numba compilable routine for computing the l2-norm
     of a given vector x.
@@ -750,8 +748,7 @@ def plsa_fit_inner_cuda(
 
     """
     threads_per_block = 128
-    blocks_per_grid = ((X_rows.shape[0] + (threads_per_block - 1))
-                       // threads_per_block)
+    blocks_per_grid = (X_rows.shape[0] + (threads_per_block - 1)) // threads_per_block
 
     k = p_z_given_d.shape[1]
     n = p_z_given_d.shape[0]
@@ -779,41 +776,40 @@ def plsa_fit_inner_cuda(
     for i in range(n_iter):
 
         plsa_e_step_cuda[blocks_per_grid, threads_per_block](
-            x_rows,
-            x_cols,
-            x_vals,
-            pw_z,
-            pz_d,
-            pz_wd,
-            e_step_thresh,
+            x_rows, x_cols, x_vals, pw_z, pz_d, pz_wd, e_step_thresh,
         )
 
         cuda.synchronize()
 
-        pw_z[:] = 0
-        pz_d[:] = 0
-        n_pwz[:] = 0
-        n_pdz[:] = 0
-
-        plsa_m_step_cuda_core[blocks_per_grid, threads_per_block](
-            x_rows,
-            x_cols,
-            x_vals,
-            pw_z,
-            pz_d,
-            pz_wd,
-            n_pwz,
-            n_pdz,
-        )
-
-        cuda.synchronize()
+        # pw_z[:] = 0
+        # pz_d[:] = 0
+        # n_pwz[:] = 0
+        # n_pdz[:] = 0
+        #
+        # plsa_m_step_cuda_core[blocks_per_grid, threads_per_block](
+        #     x_rows, x_cols, x_vals, pw_z, pz_d, pz_wd, n_pwz, n_pdz,
+        # )
+        #
+        # cuda.synchronize()
 
         pw_z.copy_to_host(p_w_given_z)
         pz_d.copy_to_host(p_z_given_d)
-        n_pwz.copy_to_host(norm_pwz)
-        n_pdz.copy_to_host(norm_pdz)
 
-        plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz)
+        plsa_m_step(
+            X_rows,
+            X_cols,
+            X_vals,
+            p_w_given_z,
+            p_z_given_d,
+            p_z_given_wd,
+            norm_pwz,
+            norm_pdz,
+        )
+
+        # n_pwz.copy_to_host(norm_pwz)
+        # n_pdz.copy_to_host(norm_pdz)
+        #
+        # plsa_m_step_cuda_post(p_w_given_z, p_z_given_d, norm_pwz, norm_pdz)
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
@@ -899,12 +895,12 @@ def plsa_fit(
 
     rng = check_random_state(random_state)
     p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, rng=rng)
-    p_z_given_d = p_z_given_d.astype(np.float32, order='C')
-    p_w_given_z = p_w_given_z.astype(np.float32, order='C')
+    p_z_given_d = p_z_given_d.astype(np.float32, order="C")
+    p_w_given_z = p_w_given_z.astype(np.float32, order="C")
 
     A = X.tocoo().astype(np.float32)
 
-    if cuda.is_available():# and False:
+    if cuda.is_available():  # and False:
         # Use GPU accelerated EM
         p_z_given_d, p_w_given_z = plsa_fit_inner_cuda(
             A.row,
@@ -935,7 +931,7 @@ def plsa_fit(
 
 
 @numba.njit(
-    'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])',
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint16,
@@ -1171,7 +1167,6 @@ def plsa_refit(
     )
 
     return p_z_given_d
-
 
 
 class PLSA(BaseEstimator, TransformerMixin):

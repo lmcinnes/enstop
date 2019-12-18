@@ -520,14 +520,11 @@ def ensemble_fit(
         stable_topics **= lift_factor
         normalize(stable_topics, axis=1)
 
-    stable_topics = stable_topics.astype(np.float32, order='C')
+    stable_topics = stable_topics.astype(np.float32, order="C")
 
     if model == "plsa":
         doc_vectors = plsa_refit(
-            X,
-            stable_topics,
-            e_step_thresh=e_step_thresh,
-            random_state=random_state,
+            X, stable_topics, e_step_thresh=e_step_thresh, random_state=random_state,
         )
     elif model == "nmf":
         doc_vectors, _, _ = non_negative_factorization(
@@ -802,7 +799,6 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             tolerance=0.001,
             random_state=self.random_state,
         )
-
 
         return result
 
