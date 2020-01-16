@@ -180,8 +180,8 @@ def plsa_m_step(
             norm_pdz[d] += s
 
     for z in range(k):
-        for w in range(m):
-            if norm_pwz[z] > 0:
+        if norm_pwz[z] > 0:
+            for w in range(m):
                 p_w_given_z[z, w] /= norm_pwz[z]
         for d in range(n):
             if norm_pdz[d] > 0:
