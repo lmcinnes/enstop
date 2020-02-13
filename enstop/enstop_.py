@@ -75,9 +75,12 @@ def plsa_topics(X, k, **kwargs):
         The topics generated from the bootstrap sample.
     """
     A = X.tocsr()
-    rng = check_random_state(kwargs.get("random_state", None))
-    bootstrap_sample_indices = rng.randint(0, A.shape[0], size=A.shape[0])
-    B = A[bootstrap_sample_indices]
+    if kwargs.get("bootstrap", True):
+        rng = check_random_state(kwargs.get("random_state", None))
+        bootstrap_sample_indices = rng.randint(0, A.shape[0], size=A.shape[0])
+        B = A[bootstrap_sample_indices]
+    else:
+        B = A
     doc_topic, topic_vocab = plsa_fit(
         B,
         k,
@@ -118,9 +121,12 @@ def nmf_topics(X, k, **kwargs):
         The topics generated from the bootstrap sample.
     """
     A = X.tocsr()
-    rng = check_random_state(kwargs.get("random_state", None))
-    bootstrap_sample_indices = rng.randint(0, A.shape[0], size=A.shape[0])
-    B = A[bootstrap_sample_indices]
+    if kwargs.get("bootstrap", True):
+        rng = check_random_state(kwargs.get("random_state", None))
+        bootstrap_sample_indices = rng.randint(0, A.shape[0], size=A.shape[0])
+        B = A[bootstrap_sample_indices]
+    else:
+        B = A
     nmf = NMF(
         n_components=k,
         init=kwargs.get("init", "nndsvd"),
@@ -387,6 +393,7 @@ def ensemble_fit(
     n_jobs=8,
     parallelism="dask",
     topic_combination="hellinger_umap",
+    bootstrap=True,
     n_iter=100,
     n_iter_per_test=10,
     tolerance=0.001,
@@ -502,6 +509,7 @@ def ensemble_fit(
         n_iter_per_test=n_iter_per_test,
         tolerance=tolerance,
         e_step_thresh=e_step_thresh,
+        bootstrap=bootstrap,
         lift_factor=1,
         beta_loss=beta_loss,
         alpha=alpha,
@@ -598,6 +606,11 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             * ``"hellinger"``
             * ``"kl_divergence"``
 
+    bootstrap: bool (optional, default=True)
+        Whether to use bootstrap resampling of documents for greater randomization. In general
+        this is a good idea that helps to prevent overfitting, however for small document
+        collections, or for other reasons, this might not be desireable.
+
     n_iter: int
         The maximum number iterations of EM to perform
 
@@ -673,6 +686,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         n_jobs=8,
         parallelism="dask",
         topic_combination="hellinger_umap",
+        bootstrap=True,
         n_iter=80,
         n_iter_per_test=10,
         tolerance=0.001,
@@ -692,6 +706,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         self.n_jobs = n_jobs
         self.parallelism = parallelism
         self.topic_combination = topic_combination
+        self.bootstrap = bootstrap
         self.n_iter = n_iter
         self.n_iter_per_test = n_iter_per_test
         self.tolerance = tolerance
@@ -721,7 +736,8 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         self.fit_transform(X)
         return self
 
-    def fit_transform(self, X, y=None):
+
+    def fit_transform(self, X, y=None, **fit_params):
         """Learn the ensemble model for the data X and return the document vectors.
 
         This is more efficient than calling fit followed by transform.
@@ -754,6 +770,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             self.n_jobs,
             self.parallelism,
             self.topic_combination,
+            self.bootstrap,
             self.n_iter,
             self.n_iter_per_test,
             self.tolerance,
