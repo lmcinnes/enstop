@@ -22,8 +22,8 @@ from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_lo
     },
     fastmath=True,
     nogil=True,
+    parallel=True,
 )
-# @numba.njit(fastmath=True,nogil=True)
 def plsa_e_step(
     X_rows,
     X_cols,
@@ -76,7 +76,7 @@ def plsa_e_step(
 
     k = p_w_given_z.shape[0]
 
-    for nz_idx in range(X_vals.shape[0]):
+    for nz_idx in numba.prange(X_vals.shape[0]):
         d = X_rows[nz_idx]
         w = X_cols[nz_idx]
 
@@ -108,7 +108,6 @@ def plsa_e_step(
     fastmath=True,
     nogil=True,
 )
-# @numba.njit(fastmath=True,nogil=True)
 def plsa_m_step(
     X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
 ):
@@ -205,7 +204,6 @@ def plsa_m_step(
     fastmath=True,
     nogil=True,
 )
-# @numba.njit(fastmath=True,nogil=True)
 def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     """Compute the log-likelihood of observing the data X given estimates for P(w|z)
     and P(z|d). The likelihood of X_{w,d} under the model is given by X_{w,d} P(w|d)
