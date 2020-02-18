@@ -11,7 +11,7 @@ from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_lo
 
 
 @numba.njit(
-    'f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)',
+    "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -96,7 +96,7 @@ def plsa_e_step(
 
 
 @numba.njit(
-    'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -191,7 +191,7 @@ def plsa_m_step(
 
 
 @numba.njit(
-    'f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])',
+    "f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -561,8 +561,8 @@ def plsa_fit(
 
     rng = check_random_state(random_state)
     p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, rng=rng)
-    p_z_given_d = p_z_given_d.astype(np.float32, order='C')
-    p_w_given_z = p_w_given_z.astype(np.float32, order='C')
+    p_z_given_d = p_z_given_d.astype(np.float32, order="C")
+    p_w_given_z = p_w_given_z.astype(np.float32, order="C")
 
     A = X.tocoo().astype(np.float32)
 
@@ -582,7 +582,7 @@ def plsa_fit(
 
 
 @numba.njit(
-    'UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])',
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -657,13 +657,7 @@ def plsa_refit_m_step(
     return p_w_given_z, p_z_given_d
 
 
-@numba.njit(
-    locals={
-        "e_step_thresh": numba.types.float32,
-    },
-    fastmath=True,
-    nogil=True
-)
+@numba.njit(locals={"e_step_thresh": numba.types.float32,}, fastmath=True, nogil=True)
 def plsa_refit_inner(
     X_rows,
     X_cols,
@@ -826,7 +820,6 @@ def plsa_refit(
     )
 
     return p_z_given_d
-
 
 
 class PLSA(BaseEstimator, TransformerMixin):

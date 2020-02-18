@@ -364,14 +364,22 @@ def generate_combined_topics_hellinger_umap(
     embedding = umap.UMAP(
         n_neighbors=n_neighbors, n_components=reduced_dim, metric=hellinger
     ).fit_transform(all_topics)
-    labels = hdbscan.HDBSCAN(
+    clusterer = hdbscan.HDBSCAN(
         min_samples=min_samples,
         min_cluster_size=min_cluster_size,
         cluster_selection_method="leaf",
-    ).fit_predict(embedding)
+    ).fit(embedding)
+    labels = clusterer.labels_
+    membership_strengths = clusterer.probabilities_
     result = np.empty((labels.max() + 1, all_topics.shape[1]), dtype=np.float32)
     for i in range(labels.max() + 1):
-        result[i] = np.mean(np.sqrt(all_topics[labels == i]), axis=0) ** 2
+        mask = labels == i
+        result[i] = (
+            np.average(
+                np.sqrt(all_topics[mask]), axis=0, weights=membership_strengths[mask]
+            )
+            ** 2
+        )
         result[i] /= result[i].sum()
 
     return result
@@ -534,10 +542,7 @@ def ensemble_fit(
 
     if model == "plsa":
         doc_vectors = plsa_refit(
-            X,
-            stable_topics,
-            e_step_thresh=e_step_thresh,
-            random_state=random_state,
+            X, stable_topics, e_step_thresh=e_step_thresh, random_state=random_state,
         )
     elif model == "nmf":
         doc_vectors, _, _ = non_negative_factorization(
@@ -738,7 +743,6 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         self.fit_transform(X)
         return self
 
-
     def fit_transform(self, X, y=None, **fit_params):
         """Learn the ensemble model for the data X and return the document vectors.
 
@@ -821,7 +825,6 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             tolerance=0.001,
             random_state=self.random_state,
         )
-
 
         return result
 
