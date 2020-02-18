@@ -107,6 +107,7 @@ def plsa_e_step(
     },
     fastmath=True,
     nogil=True,
+    parallel=True,
 )
 def plsa_m_step(
     X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
@@ -178,7 +179,7 @@ def plsa_m_step(
             norm_pwz[z] += s
             norm_pdz[d] += s
 
-    for z in range(k):
+    for z in numba.prange(k):
         if norm_pwz[z] > 0:
             for w in range(m):
                 p_w_given_z[z, w] /= norm_pwz[z]
@@ -203,6 +204,7 @@ def plsa_m_step(
     },
     fastmath=True,
     nogil=True,
+    parallel=True,
 )
 def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     """Compute the log-likelihood of observing the data X given estimates for P(w|z)
@@ -247,7 +249,7 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     result = 0.0
     k = p_w_given_z.shape[0]
 
-    for nz_idx in range(X_vals.shape[0]):
+    for nz_idx in numba.prange(X_vals.shape[0]):
         d = X_rows[nz_idx]
         w = X_cols[nz_idx]
         x = X_vals[nz_idx]

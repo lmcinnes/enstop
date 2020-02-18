@@ -197,7 +197,9 @@ def ensemble_of_topics(
     elif parallelism == "joblib" and not _HAVE_JOBLIB:
         raise ValueError("Joblib was not correctly imported and is unavailable")
     elif parallelism == "none":
-        topics = [create_topics(X, k, **kwargs) for i in range(n_runs)]
+        topics = []
+        for i in range(n_runs):
+            topics.append(create_topics(X, k, **kwargs))
     else:
         raise ValueError(
             "Unrecognized parallelism {}; should be one of {}".format(
@@ -390,7 +392,7 @@ def ensemble_fit(
     min_samples=3,
     min_cluster_size=4,
     n_starts=16,
-    n_jobs=8,
+    n_jobs=1,
     parallelism="dask",
     topic_combination="hellinger_umap",
     bootstrap=True,
