@@ -798,7 +798,7 @@ def plsa_refit(
         The resulting model values of P(z|d) and P(w|z)
 
     """
-    A = X.tocoo()
+    A = X.tocoo().astype(np.float32)
     k = topics.shape[0]
 
     rng = check_random_state(random_state)
@@ -1004,7 +1004,7 @@ class PLSA(BaseEstimator, TransformerMixin):
             n_iter=50,
             n_iter_per_test=5,
             tolerance=0.001,
-            random_state=self.random_state,
+            random_state=random_state,
         )
 
         return result

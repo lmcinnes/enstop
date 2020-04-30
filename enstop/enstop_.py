@@ -368,6 +368,7 @@ def generate_combined_topics_hellinger_umap(
         min_samples=min_samples,
         min_cluster_size=min_cluster_size,
         cluster_selection_method="leaf",
+        allow_single_cluster=True,
     ).fit(embedding)
     labels = clusterer.labels_
     membership_strengths = clusterer.probabilities_
