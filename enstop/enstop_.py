@@ -702,6 +702,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         beta_loss=1,
         alpha=0.0,
         solver="mu",
+        transform_random_seed=42,
         random_state=None,
     ):
         self.n_components = n_components
@@ -722,6 +723,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         self.beta_loss = beta_loss
         self.alpha = alpha
         self.solver = solver
+        self.transform_random_seed = transform_random_seed
         self.random_state = random_state
 
     def fit(self, X, y=None):
@@ -811,6 +813,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
         """
 
         X = check_array(X, accept_sparse="csr")
+        random_state = check_random_state(self.transform_random_seed)
 
         if not issparse(X):
             X = coo_matrix(X)
@@ -823,7 +826,7 @@ class EnsembleTopics(BaseEstimator, TransformerMixin):
             n_iter=50,
             n_iter_per_test=5,
             tolerance=0.001,
-            random_state=self.random_state,
+            random_state=random_state,
         )
 
         return result

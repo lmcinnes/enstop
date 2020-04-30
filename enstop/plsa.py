@@ -904,6 +904,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         n_iter_per_test=10,
         tolerance=0.001,
         e_step_thresh=1e-32,
+        transform_random_seed=42,
         random_state=None,
     ):
 
@@ -913,6 +914,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         self.n_iter_per_test = n_iter_per_test
         self.tolerance = tolerance
         self.e_step_thresh = e_step_thresh
+        self.transform_random_seed = transform_random_seed
         self.random_state = random_state
 
     def fit(self, X, y=None):
@@ -989,6 +991,7 @@ class PLSA(BaseEstimator, TransformerMixin):
             An embedding of the documents X into the topic space.
         """
         X = check_array(X, accept_sparse="csr")
+        random_state = check_random_state(self.transform_random_seed)
 
         if not issparse(X):
             X = coo_matrix(X)
