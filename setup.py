@@ -40,7 +40,7 @@ configuration = {
         "scikit-learn >= 0.21",
         "scipy >= 1.0",
         "numba >= 0.43",
-        "dask >= 1.2",
+        "dask[delayed] >= 1.2",
         "hdbscan >= 0.8",
         "umap-learn >= 0.3.8",
     ],
