@@ -154,7 +154,7 @@ def plsa_m_step(
         The current estimates for P(z|w,d)
 
     sample_weight: array of shape (n_docs,)
-        Input sample weights.
+        Input document weights.
 
     norm_pwz: array of shape (n_topics,)
         Auxilliary array used for storing row norms; this is passed in to save
@@ -248,7 +248,7 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weig
         The current estimates of values for P(z|d)
 
     sample_weight: array of shape (n_docs,)
-        Input sample weights.
+        Input document weights.
 
     Returns
     -------
@@ -446,7 +446,7 @@ def plsa_fit_inner(
         The current estimates of values for P(z|d)
 
     sample_weight: array of shape (n_docs,)
-        Input sample weights.
+        Input document weights.
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -544,7 +544,7 @@ def plsa_fit(
         The number of topics for pLSA to fit with.
 
     sample_weight: array of shape (n_docs,)
-        Input sample weights.
+        Input document weights.
 
     init: string or tuple (optional, default="random")
         The intialization method to use. This should be one of:
@@ -657,6 +657,9 @@ def plsa_refit_m_step(
     p_z_given_wd: array of shape (nnz, n_topics)
         The current estimates for P(z|w,d)
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     norm_pdz: array of shape (n_docs,)
         Auxilliary array used for storing row norms; this is passed in to save
         reallocations.
@@ -729,7 +732,7 @@ def plsa_refit_inner(
         The current estimates of values for P(z|d)
 
     sample_weight: array of shape (n_docs,)
-        Input sample weights.
+        Input document weights.
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -807,7 +810,7 @@ def plsa_refit(
         The fixed topics against which to fit the values of P(z|d).
 
     sample_weight: array of shape (n_docs,)
-        Input sample weights.
+        Input document weights.
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -968,6 +971,9 @@ class PLSA(BaseEstimator, TransformerMixin):
 
         y: Ignored
 
+        sample_weight: array of shape (n_docs,)
+            Input document weights.
+
         Returns
         -------
         self
@@ -987,6 +993,9 @@ class PLSA(BaseEstimator, TransformerMixin):
 
         y: Ignored
 
+        sample_weight: array of shape (n_docs,)
+            Input document weights.
+
         Returns
         -------
         embedding: array of shape (n_docs, n_topics)
@@ -998,10 +1007,13 @@ class PLSA(BaseEstimator, TransformerMixin):
         if not issparse(X):
             X = csr_matrix(X)
 
+        sample_weight = _check_sample_weight(
+            sample_weight, X, dtype=np.float32)
+
         U, V = plsa_fit(
             X,
-            sample_weight,
             self.n_components,
+            sample_weight,
             self.init,
             self.n_iter,
             self.n_iter_per_test,
@@ -1035,7 +1047,7 @@ class PLSA(BaseEstimator, TransformerMixin):
 
         # Set weights to 1 for all examples
         sample_weight = _check_sample_weight(
-            None, X, dtype=X.dtype)
+            None, X, dtype=np.float32)
 
         if not issparse(X):
             X = coo_matrix(X)
