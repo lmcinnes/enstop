@@ -4,11 +4,11 @@ import numba
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
 from sklearn.utils.extmath import randomized_svd
+from sklearn.utils.validation import _check_sample_weight
 from sklearn.decomposition import non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
-from sklearn.utils.validation import _check_sample_weight
 
 @numba.njit(
     "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
