@@ -182,11 +182,12 @@ def plsa_m_step(
 
         for z in range(k):
             s = x * p_z_given_wd[nz_idx, z]
+            t = s * sample_weight[d]
 
-            p_w_given_z[z, w] += s * sample_weight[d]
+            p_w_given_z[z, w] += t
             p_z_given_d[d, z] += s
 
-            norm_pwz[z] += s * sample_weight[d]
+            norm_pwz[z] += t
             norm_pdz[d] += s
 
     for z in numba.prange(k):
