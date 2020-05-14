@@ -1008,11 +1008,26 @@ class PLSA(BaseEstimator, TransformerMixin):
         if not issparse(X):
             X = csr_matrix(X)
 
+
         sample_weight = _check_sample_weight(
             sample_weight, X, dtype=np.float32)
 
+        if np.any(X.data < 0):
+            raise ValueError("PLSA is only valid for matrices with non-negative "
+                             "entries")
+
+        row_sums = np.array(X.sum(axis=1).T)[0]
+        good_rows = row_sums != 0
+
+        if not np.all(good_rows):
+            zero_rows_found = True
+            data_for_fitting = X[good_rows]
+        else:
+            zero_rows_found = False
+            data_for_fitting = X
+
         U, V = plsa_fit(
-            X,
+            data_for_fitting,
             self.n_components,
             sample_weight,
             self.init,
@@ -1022,8 +1037,14 @@ class PLSA(BaseEstimator, TransformerMixin):
             self.e_step_thresh,
             self.random_state,
         )
+
+        if zero_rows_found:
+            self.embedding_ = np.zeros((X.shape[0], self.n_components))
+            self.embedding_[good_rows] = U
+        else:
+            self.embedding_ = U
+
         self.components_ = V
-        self.embedding_ = U
         self.training_data_ = X
 
         return U
