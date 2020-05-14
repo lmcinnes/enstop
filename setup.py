@@ -8,7 +8,7 @@ def readme():
 
 configuration = {
     "name": "enstop",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "description": "Ensemble topic modelling with pLSA",
     "long_description": readme(),
     "classifiers": [
