@@ -4,11 +4,11 @@ import numba
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
 from sklearn.utils.extmath import randomized_svd
+from sklearn.utils.validation import _check_sample_weight
 from sklearn.decomposition import non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
-
 
 @numba.njit(
     "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
@@ -96,7 +96,7 @@ def plsa_e_step(
 
 
 @numba.njit(
-    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -110,7 +110,15 @@ def plsa_e_step(
     parallel=True,
 )
 def plsa_m_step(
-    X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
+    X_rows,
+    X_cols,
+    X_vals,
+    p_w_given_z,
+    p_z_given_d,
+    p_z_given_wd,
+    sample_weight,
+    norm_pwz,
+    norm_pdz
 ):
     """Perform the M-step of pLSA optimization. This amounts to using the estimates
     of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation implements
@@ -145,6 +153,9 @@ def plsa_m_step(
     p_z_given_wd: array of shape (nnz, n_topics)
         The current estimates for P(z|w,d)
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     norm_pwz: array of shape (n_topics,)
         Auxilliary array used for storing row norms; this is passed in to save
         reallocations.
@@ -152,7 +163,6 @@ def plsa_m_step(
     norm_pdz: array of shape (n_docs,)
         Auxilliary array used for storing row norms; this is passed in to save
         reallocations.
-
     """
 
     k = p_z_given_wd.shape[1]
@@ -172,11 +182,12 @@ def plsa_m_step(
 
         for z in range(k):
             s = x * p_z_given_wd[nz_idx, z]
+            t = s * sample_weight[d]
 
-            p_w_given_z[z, w] += s
+            p_w_given_z[z, w] += t
             p_z_given_d[d, z] += s
 
-            norm_pwz[z] += s
+            norm_pwz[z] += t
             norm_pdz[d] += s
 
     for z in numba.prange(k):
@@ -191,7 +202,7 @@ def plsa_m_step(
 
 
 @numba.njit(
-    "f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1])",
+    "f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -206,7 +217,7 @@ def plsa_m_step(
     nogil=True,
     parallel=True,
 )
-def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
+def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weight):
     """Compute the log-likelihood of observing the data X given estimates for P(w|z)
     and P(z|d). The likelihood of X_{w,d} under the model is given by X_{w,d} P(w|d)
     = X_{w,d} P(w|z) P(z|d). This function returns
@@ -237,6 +248,9 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
     p_z_given_d: array of shape (n_docs, n_topics)
         The current estimates of values for P(z|d)
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     Returns
     -------
 
@@ -258,7 +272,7 @@ def log_likelihood(X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d):
         for z in range(k):
             p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
 
-        result += x * np.log(p_w_given_d)
+        result += x * np.log(p_w_given_d) * sample_weight[d]
 
     return result
 
@@ -397,6 +411,7 @@ def plsa_fit_inner(
     X_vals,
     p_w_given_z,
     p_z_given_d,
+    sample_weight,
     n_iter=100,
     n_iter_per_test=10,
     tolerance=0.001,
@@ -431,6 +446,9 @@ def plsa_fit_inner(
     p_z_given_d: array of shape (n_docs, n_topics)
         The current estimates of values for P(z|d)
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     n_iter: int
         The maximum number iterations of EM to perform
 
@@ -461,7 +479,7 @@ def plsa_fit_inner(
     norm_pdz = np.zeros(n, dtype=np.float32)
 
     previous_log_likelihood = log_likelihood(
-        X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
+        X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weight
     )
 
     for i in range(n_iter):
@@ -482,13 +500,14 @@ def plsa_fit_inner(
             p_w_given_z,
             p_z_given_d,
             p_z_given_wd,
+            sample_weight,
             norm_pwz,
             norm_pdz,
         )
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
-                X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
+                X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weight
             )
             change = np.abs(current_log_likelihood - previous_log_likelihood)
             if change / np.abs(current_log_likelihood) < tolerance:
@@ -502,6 +521,7 @@ def plsa_fit_inner(
 def plsa_fit(
     X,
     k,
+    sample_weight,
     init="random",
     n_iter=100,
     n_iter_per_test=10,
@@ -523,6 +543,9 @@ def plsa_fit(
 
     k: int
         The number of topics for pLSA to fit with.
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
 
     init: string or tuple (optional, default="random")
         The intialization method to use. This should be one of:
@@ -572,6 +595,7 @@ def plsa_fit(
         A.data,
         p_w_given_z,
         p_z_given_d,
+        sample_weight,
         n_iter,
         n_iter_per_test,
         tolerance,
@@ -582,7 +606,7 @@ def plsa_fit(
 
 
 @numba.njit(
-    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1])",
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -595,7 +619,14 @@ def plsa_fit(
     nogil=True,
 )
 def plsa_refit_m_step(
-    X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pdz
+    X_rows,
+    X_cols,
+    X_vals,
+    p_w_given_z,
+    p_z_given_d,
+    p_z_given_wd,
+    sample_weight,
+    norm_pdz
 ):
     """Optimized routine for the M step fitting values of P(z|d) given a fixed set of
     topics (i.e. P(w|z)).
@@ -626,6 +657,9 @@ def plsa_refit_m_step(
 
     p_z_given_wd: array of shape (nnz, n_topics)
         The current estimates for P(z|w,d)
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
 
     norm_pdz: array of shape (n_docs,)
         Auxilliary array used for storing row norms; this is passed in to save
@@ -664,6 +698,7 @@ def plsa_refit_inner(
     X_vals,
     topics,
     p_z_given_d,
+    sample_weight,
     n_iter=50,
     n_iter_per_test=10,
     tolerance=0.005,
@@ -697,6 +732,9 @@ def plsa_refit_inner(
     p_z_given_d: array of shape (n_docs, n_topics)
         The current estimates of values for P(z|d)
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     n_iter: int
         The maximum number iterations of EM to perform
 
@@ -724,7 +762,7 @@ def plsa_refit_inner(
     norm_pdz = np.zeros(p_z_given_d.shape[0], dtype=np.float32)
 
     previous_log_likelihood = log_likelihood(
-        X_rows, X_cols, X_vals, topics, p_z_given_d
+        X_rows, X_cols, X_vals, topics, p_z_given_d, sample_weight
     )
 
     for i in range(n_iter):
@@ -733,12 +771,12 @@ def plsa_refit_inner(
             X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, e_step_thresh
         )
         plsa_refit_m_step(
-            X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, norm_pdz
+            X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, sample_weight, norm_pdz
         )
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
-                X_rows, X_cols, X_vals, topics, p_z_given_d
+                X_rows, X_cols, X_vals, topics, p_z_given_d, sample_weight
             )
             if current_log_likelihood > 0:
                 change = np.abs(current_log_likelihood - previous_log_likelihood)
@@ -753,6 +791,7 @@ def plsa_refit_inner(
 def plsa_refit(
     X,
     topics,
+    sample_weight,
     n_iter=50,
     n_iter_per_test=10,
     tolerance=0.005,
@@ -770,6 +809,9 @@ def plsa_refit(
 
     topics: array of shape (n_topics, n_words)
         The fixed topics against which to fit the values of P(z|d).
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -813,6 +855,7 @@ def plsa_refit(
         A.data,
         topics,
         p_z_given_d,
+        sample_weight,
         n_iter=n_iter,
         n_iter_per_test=n_iter_per_test,
         tolerance=tolerance,
@@ -917,7 +960,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         self.transform_random_seed = transform_random_seed
         self.random_state = random_state
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, sample_weight=None):
         """Learn the pLSA model for the data X and return the document vectors.
 
         This is more efficient than calling fit followed by transform.
@@ -928,15 +971,18 @@ class PLSA(BaseEstimator, TransformerMixin):
             The data matrix pLSA is attempting to fit to.
 
         y: Ignored
+
+        sample_weight: array of shape (n_docs,)
+            Input document weights.
 
         Returns
         -------
         self
         """
-        self.fit_transform(X)
+        self.fit_transform(X, sample_weight=sample_weight)
         return self
 
-    def fit_transform(self, X, y=None):
+    def fit_transform(self, X, y=None, sample_weight=None):
         """Learn the pLSA model for the data X and return the document vectors.
 
         This is more efficient than calling fit followed by transform.
@@ -947,6 +993,9 @@ class PLSA(BaseEstimator, TransformerMixin):
             The data matrix pLSA is attempting to fit to.
 
         y: Ignored
+
+        sample_weight: array of shape (n_docs,)
+            Input document weights.
 
         Returns
         -------
@@ -958,6 +1007,10 @@ class PLSA(BaseEstimator, TransformerMixin):
 
         if not issparse(X):
             X = csr_matrix(X)
+
+
+        sample_weight = _check_sample_weight(
+            sample_weight, X, dtype=np.float32)
 
         if np.any(X.data < 0):
             raise ValueError("PLSA is only valid for matrices with non-negative "
@@ -976,6 +1029,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         U, V = plsa_fit(
             data_for_fitting,
             self.n_components,
+            sample_weight,
             self.init,
             self.n_iter,
             self.n_iter_per_test,
@@ -1013,6 +1067,10 @@ class PLSA(BaseEstimator, TransformerMixin):
         X = check_array(X, accept_sparse="csr")
         random_state = check_random_state(self.transform_random_seed)
 
+        # Set weights to 1 for all examples
+        sample_weight = _check_sample_weight(
+            None, X, dtype=np.float32)
+
         if not issparse(X):
             X = coo_matrix(X)
         else:
@@ -1021,6 +1079,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         result = plsa_refit(
             X,
             self.components_,
+            sample_weight,
             n_iter=50,
             n_iter_per_test=5,
             tolerance=0.001,
