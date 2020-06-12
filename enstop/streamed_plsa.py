@@ -120,7 +120,6 @@ def plsa_e_step_on_a_block(
     },
     fastmath=True,
     nogil=True,
-    parallel=True,
 )
 def plsa_partial_m_step_on_a_block(
     X_rows,
@@ -210,7 +209,7 @@ def plsa_partial_m_step_on_a_block(
             norm_pdz[d] += s
 
 
-@numba.njit()
+@numba.njit(parallel=True, fastmath=True, nogil=True)
 def plsa_em_step(
     X_rows,
     X_cols,
@@ -505,7 +504,6 @@ def plsa_fit(
     },
     fastmath=True,
     nogil=True,
-    parallel=True,
 )
 def plsa_partial_refit_m_step_on_a_block(
     X_rows,
