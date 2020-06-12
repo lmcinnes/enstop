@@ -691,6 +691,10 @@ def plsa_refit_inner_blockwise(
     sample_weight: array of shape (n_docs,)
         Input document weights.
 
+    block_size: int (optional, default=16384)
+        The number of nonzero entries of X to process in a block. The larger this
+        value the faster the compute may go, but at higher memory cost.
+
     n_iter: int
         The maximum number iterations of EM to perform
 
@@ -776,6 +780,10 @@ def plsa_refit(
     sample_weight: array of shape (n_docs,)
         Input document weights.
 
+    block_size: int (optional, default=16384)
+        The number of nonzero entries of X to process in a block. The larger this
+        value the faster the compute may go, but at higher memory cost.
+
     n_iter: int
         The maximum number iterations of EM to perform
 
@@ -842,6 +850,10 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
 
     The algorithm proceeds using an Expectation-Maximization (EM) approach to attempt to maximise
     the likelihood of the observed data under the estimated model.
+
+    The StreamedPLSA uses a block based approached to compute partial E-step M-step
+    pairs to lower overall memory usage. This is particularly useful for very large
+    training data and/or large numbers of topics.
 
     Parameters
     ----------
