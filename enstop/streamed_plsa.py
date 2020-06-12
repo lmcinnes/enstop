@@ -11,7 +11,7 @@ from enstop.plsa import log_likelihood, plsa_init
 
 
 @numba.njit(
-    "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
+    "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],i8,i8,f4)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -109,7 +109,7 @@ def plsa_e_step_on_a_block(
 
 
 @numba.njit(
-    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
+    "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -494,7 +494,7 @@ def plsa_fit(
 
 
 @numba.njit(
-    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
+    "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],i8,i8)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
