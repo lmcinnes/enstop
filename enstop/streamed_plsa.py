@@ -3,8 +3,7 @@ import numba
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
-from sklearn.utils.extmath import randomized_svd
-from sklearn.decomposition import non_negative_factorization
+from sklearn.utils.validation import _check_sample_weight
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
@@ -132,6 +131,7 @@ def plsa_partial_m_step_on_a_block(
     p_z_given_wd_block,
     norm_pwz,
     norm_pdz,
+    sample_weight,
     block_start,
     block_end,
 ):
@@ -181,6 +181,9 @@ def plsa_partial_m_step_on_a_block(
         Auxilliary array used for storing row norms; this is passed in to save
         reallocations.
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     block_start: int
         The index into nen-zeros of X where this block starts
 
@@ -198,11 +201,12 @@ def plsa_partial_m_step_on_a_block(
 
         for z in range(k):
             s = x * p_z_given_wd_block[nz_idx - block_start, z]
+            t = s * sample_weight[d]
 
-            p_w_given_z[z, w] += s
+            p_w_given_z[z, w] += t
             p_z_given_d[d, z] += s
 
-            norm_pwz[z] += s
+            norm_pwz[z] += t
             norm_pdz[d] += s
 
 
@@ -218,6 +222,7 @@ def plsa_em_step(
     p_z_given_wd_block,
     norm_pwz,
     norm_pdz,
+    sample_weight,
     e_step_thresh=1e-32,
 ):
 
@@ -257,6 +262,7 @@ def plsa_em_step(
             p_z_given_wd_block,
             norm_pwz,
             norm_pdz,
+            sample_weight,
             block_start,
             block_end,
         )
@@ -285,6 +291,7 @@ def plsa_fit_inner_blockwise(
     X_vals,
     p_w_given_z,
     p_z_given_d,
+    sample_weight,
     block_size=16384,
     n_iter=100,
     n_iter_per_test=10,
@@ -320,6 +327,9 @@ def plsa_fit_inner_blockwise(
     p_z_given_d: array of shape (n_docs, n_topics)
         The current estimates of values for P(z|d)
 
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
     block_size: int (optional, default=16384)
         The number of nonzero entries of X to process in a block. The larger this
         value the faster the compute may go, but at higher memory cost.
@@ -354,7 +364,7 @@ def plsa_fit_inner_blockwise(
     norm_pdz = np.zeros(n, dtype=np.float32)
 
     previous_log_likelihood = log_likelihood(
-        X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
+        X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weight,
     )
 
     next_p_w_given_z = np.zeros_like(p_w_given_z)
@@ -373,12 +383,13 @@ def plsa_fit_inner_blockwise(
             p_z_given_wd_block,
             norm_pwz,
             norm_pdz,
+            sample_weight,
             e_step_thresh,
         )
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
-                X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d
+                X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weight,
             )
             change = np.abs(current_log_likelihood - previous_log_likelihood)
             if change / np.abs(current_log_likelihood) < tolerance:
@@ -392,6 +403,7 @@ def plsa_fit_inner_blockwise(
 def plsa_fit(
     X,
     k,
+    sample_weight,
     init="random",
     block_size=16384,
     n_iter=100,
@@ -414,6 +426,9 @@ def plsa_fit(
 
     k: int
         The number of topics for pLSA to fit with.
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
 
     init: string or tuple (optional, default="random")
         The intialization method to use. This should be one of:
@@ -467,6 +482,7 @@ def plsa_fit(
         A.data,
         p_w_given_z,
         p_z_given_d,
+        sample_weight,
         block_size=block_size,
         n_iter=n_iter,
         n_iter_per_test=n_iter_per_test,
@@ -497,6 +513,7 @@ def plsa_partial_refit_m_step_on_a_block(
     X_vals,
     p_z_given_d,
     p_z_given_wd_block,
+    sample_weight,
     norm_pdz,
     block_start,
     block_end,
@@ -530,18 +547,14 @@ def plsa_partial_refit_m_step_on_a_block(
     X_vals: array of shape (nnz,)
         For each non-zero entry of X, the value of entry.
 
-    p_w_given_z: array of shape (n_topics, n_words)
-        The result array to write new estimates of P(w|z) to.
-
     p_z_given_d: array of shape (n_docs, n_topics)
         The result array to write new estimates of P(z|d) to.
 
     p_z_given_wd_block: array of shape (block_size, n_topics)
         The current estimates for P(z|w,d) for a block
 
-    norm_pwz: array of shape (n_topics,)
-        Auxilliary array used for storing row norms; this is passed in to save
-        reallocations.
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
 
     norm_pdz: array of shape (n_docs,)
         Auxilliary array used for storing row norms; this is passed in to save
@@ -577,6 +590,7 @@ def plsa_refit_em_step(
     prev_p_z_given_d,
     next_p_z_given_d,
     p_z_given_wd_block,
+    sample_weight,
     norm_pdz,
     e_step_thresh=1e-32,
 ):
@@ -613,6 +627,7 @@ def plsa_refit_em_step(
             p_w_given_z,
             next_p_z_given_d,
             p_z_given_wd_block,
+            sample_weight,
             norm_pdz,
             block_start,
             block_end,
@@ -638,6 +653,7 @@ def plsa_refit_inner_blockwise(
     X_vals,
     topics,
     p_z_given_d,
+    sample_weight,
     block_size=16384,
     n_iter=50,
     n_iter_per_test=10,
@@ -671,6 +687,9 @@ def plsa_refit_inner_blockwise(
 
     p_z_given_d: array of shape (n_docs, n_topics)
         The current estimates of values for P(z|d)
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
 
     n_iter: int
         The maximum number iterations of EM to perform
@@ -714,12 +733,13 @@ def plsa_refit_inner_blockwise(
             p_z_given_d,
             next_p_z_given_d,
             p_z_given_wd_block,
+            sample_weight,
             norm_pdz,
         )
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
-                X_rows, X_cols, X_vals, topics, p_z_given_d
+                X_rows, X_cols, X_vals, topics, p_z_given_d, sample_weight,
             )
             if current_log_likelihood > 0:
                 change = np.abs(current_log_likelihood - previous_log_likelihood)
@@ -727,6 +747,84 @@ def plsa_refit_inner_blockwise(
                     break
                 else:
                     previous_log_likelihood = current_log_likelihood
+
+    return p_z_given_d
+
+def plsa_refit(
+    X,
+    topics,
+    sample_weight,
+    block_size=16384,
+    n_iter=50,
+    n_iter_per_test=10,
+    tolerance=0.005,
+    e_step_thresh=1e-32,
+    random_state=None,
+):
+    """Routine for refitting values of P(z|d) given a fixed set of topics (
+    i.e. P(w|z)). This allows fitting document vectors to a predefined set of topics
+    (given, for example, by an ensemble result).
+
+    Parameters
+    ----------
+    X: sparse matrix of shape (n_docs, n_words)
+        The data matrix pLSA is attempting to fit to.
+
+    topics: array of shape (n_topics, n_words)
+        The fixed topics against which to fit the values of P(z|d).
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
+    n_iter: int
+        The maximum number iterations of EM to perform
+
+    n_iter_per_test: int
+        The number of iterations between tests for relative improvement in
+        log-likelihood.
+
+    tolerance: float
+        The threshold of relative improvement in log-likelihood required to continue
+        iterations.
+
+    e_step_thresh: float (optional, default=1e-32)
+        Option to promote sparsity. If the value of P(w|z)P(z|d) in the E step falls
+        below threshold then write a zero for P(z|w,d).
+
+    random_state: int, RandomState instance or None, (optional, default: None)
+        If int, random_state is the seed used by the random number generator;
+        If RandomState instance, random_state is the random number generator;
+        If None, the random number generator is the RandomState instance used
+        by `np.random`. Used in in initialization.
+
+    Returns
+    -------
+    p_z_given_d, p_w_given_z: arrays of shapes (n_docs, n_topics) and (n_topics, n_words)
+        The resulting model values of P(z|d) and P(w|z)
+
+    """
+    A = X.tocoo().astype(np.float32)
+    k = topics.shape[0]
+
+    rng = check_random_state(random_state)
+    p_z_given_d = rng.rand(A.shape[0], k)
+    normalize(p_z_given_d, axis=1)
+    p_z_given_d = p_z_given_d.astype(np.float32)
+    topics = topics.astype(np.float32)
+
+    p_z_given_d = plsa_refit_inner_blockwise(
+        A.row,
+        A.col,
+        A.data,
+        topics,
+        p_z_given_d,
+        sample_weight,
+        block_size=block_size,
+        n_iter=n_iter,
+        n_iter_per_test=n_iter_per_test,
+        tolerance=tolerance,
+        e_step_thresh=e_step_thresh,
+    )
 
     return p_z_given_d
 
@@ -832,7 +930,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         self.transform_random_seed = transform_random_seed
         self.random_state = random_state
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, sample_weight=None):
         """Learn the pLSA model for the data X and return the document vectors.
 
         This is more efficient than calling fit followed by transform.
@@ -843,15 +941,18 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
             The data matrix pLSA is attempting to fit to.
 
         y: Ignored
+
+        sample_weight: array of shape (n_docs,)
+            Input document weights.
 
         Returns
         -------
         self
         """
-        self.fit_transform(X)
+        self.fit_transform(X, sample_weight=sample_weight)
         return self
 
-    def fit_transform(self, X, y=None):
+    def fit_transform(self, X, y=None, sample_weight=None):
         """Learn the pLSA model for the data X and return the document vectors.
 
         This is more efficient than calling fit followed by transform.
@@ -862,6 +963,9 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
             The data matrix pLSA is attempting to fit to.
 
         y: Ignored
+
+        sample_weight: array of shape (n_docs,)
+            Input document weights.
 
         Returns
         -------
@@ -873,6 +977,9 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
 
         if not issparse(X):
             X = csr_matrix(X)
+
+        sample_weight = _check_sample_weight(
+            sample_weight, X, dtype=np.float32)
 
         if np.any(X.data < 0):
             raise ValueError(
@@ -892,6 +999,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         U, V = plsa_fit(
             data_for_fitting,
             self.n_components,
+            sample_weight,
             self.init,
             self.block_size,
             self.n_iter,
@@ -912,39 +1020,39 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
 
         return U
 
-    # def transform(self, X, y=None):
-    #     """Transform the data X into the topic space of the fitted pLSA model.
-    #
-    #     Parameters
-    #     ----------
-    #     X: array or sparse matrix of shape (n_docs, n_words)
-    #         Corpus to be embedded into topic space
-    #
-    #     y: Ignored
-    #
-    #     Returns
-    #     -------
-    #     embedding: array of shape (n_docs, n_topics)
-    #         An embedding of the documents X into the topic space.
-    #     """
-    #     X = check_array(X, accept_sparse="csr")
-    #     random_state = check_random_state(self.transform_random_seed)
-    #
-    #     if not issparse(X):
-    #         X = coo_matrix(X)
-    #     else:
-    #         X = X.tocoo()
-    #
-    #     result = plsa_refit(
-    #         X,
-    #         self.components_,
-    #         n_iter=50,
-    #         n_iter_per_test=5,
-    #         tolerance=0.001,
-    #         random_state=random_state,
-    #     )
-    #
-    #     return result
+    def transform(self, X, y=None):
+        """Transform the data X into the topic space of the fitted pLSA model.
+
+        Parameters
+        ----------
+        X: array or sparse matrix of shape (n_docs, n_words)
+            Corpus to be embedded into topic space
+
+        y: Ignored
+
+        Returns
+        -------
+        embedding: array of shape (n_docs, n_topics)
+            An embedding of the documents X into the topic space.
+        """
+        X = check_array(X, accept_sparse="csr")
+        random_state = check_random_state(self.transform_random_seed)
+
+        if not issparse(X):
+            X = coo_matrix(X)
+        else:
+            X = X.tocoo()
+
+        result = plsa_refit(
+            X,
+            self.components_,
+            n_iter=50,
+            n_iter_per_test=5,
+            tolerance=0.001,
+            random_state=random_state,
+        )
+
+        return result
 
     def coherence(self, topic_num=None, n_words=20):
         """Compute the average coherence of fitted topics, or of a single individual topic.
