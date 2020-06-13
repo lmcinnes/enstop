@@ -96,7 +96,7 @@ def plsa_e_step(
 
 
 @numba.njit(
-    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],f4[::1])",
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -110,6 +110,110 @@ def plsa_e_step(
     parallel=True,
 )
 def plsa_m_step(
+    X_rows,
+    X_cols,
+    X_vals,
+    p_w_given_z,
+    p_z_given_d,
+    p_z_given_wd,
+    norm_pwz,
+    norm_pdz
+):
+    """Perform the M-step of pLSA optimization. This amounts to using the estimates
+    of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation implements
+
+    P(w|z) = \frac{\sum_{d\in D} X_{w,d}P(z|w,d)}{\sum_{d,z} X_{w,d}P(z|w,d)}
+    P(z|d) = \frac{\sum_{w\in V} X_{w,d}P(z|w,d)}{\sum_{w,d} X_{w,d}P(z|w,d)}
+
+    This routine is optimized to work with sparse matrices such that P(z|w,d) is only
+    computed for w, d such that X_{w,d} is non-zero, where X is the data matrix.
+
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
+
+    Parameters
+    ----------
+    X_rows: array of shape (nnz,)
+        For each non-zero entry of X, the row of the entry.
+
+    X_cols: array of shape (nnz,)
+        For each non-zero entry of X, the column of the
+        entry.
+
+    X_vals: array of shape (nnz,)
+        For each non-zero entry of X, the value of entry.
+
+    p_w_given_z: array of shape (n_topics, n_words)
+        The result array to write new estimates of P(w|z) to.
+
+    p_z_given_d: array of shape (n_docs, n_topics)
+        The result array to write new estimates of P(z|d) to.
+
+    p_z_given_wd: array of shape (nnz, n_topics)
+        The current estimates for P(z|w,d)
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
+    norm_pwz: array of shape (n_topics,)
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
+
+    norm_pdz: array of shape (n_docs,)
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
+    """
+
+    k = p_z_given_wd.shape[1]
+    n = p_z_given_d.shape[0]
+    m = p_w_given_z.shape[1]
+
+    p_w_given_z[:] = 0.0
+    p_z_given_d[:] = 0.0
+
+    norm_pwz[:] = 0.0
+    norm_pdz[:] = 0.0
+
+    for nz_idx in range(X_vals.shape[0]):
+        d = X_rows[nz_idx]
+        w = X_cols[nz_idx]
+        x = X_vals[nz_idx]
+
+        for z in range(k):
+            s = x * p_z_given_wd[nz_idx, z]
+
+            p_w_given_z[z, w] += s
+            p_z_given_d[d, z] += s
+
+            norm_pwz[z] += s
+            norm_pdz[d] += s
+
+    for z in numba.prange(k):
+        if norm_pwz[z] > 0:
+            for w in range(m):
+                p_w_given_z[z, w] /= norm_pwz[z]
+        for d in range(n):
+            if norm_pdz[d] > 0:
+                p_z_given_d[d, z] /= norm_pdz[d]
+
+    return p_w_given_z, p_z_given_d
+
+
+@numba.njit(
+    "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],f4[::1])",
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
+        "s": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+    parallel=True,
+)
+def plsa_m_step_w_sample_weight(
     X_rows,
     X_cols,
     X_vals,
@@ -416,6 +520,7 @@ def plsa_fit_inner(
     n_iter_per_test=10,
     tolerance=0.001,
     e_step_thresh=1e-32,
+    use_sample_weights=False,
 ):
     """Internal loop of EM steps required to optimize pLSA, along with relative
     convergence tests with respect to the log-likelihood of observing the data under
@@ -493,17 +598,29 @@ def plsa_fit_inner(
             p_z_given_wd,
             e_step_thresh,
         )
-        plsa_m_step(
-            X_rows,
-            X_cols,
-            X_vals,
-            p_w_given_z,
-            p_z_given_d,
-            p_z_given_wd,
-            sample_weight,
-            norm_pwz,
-            norm_pdz,
-        )
+        if use_sample_weights:
+            plsa_m_step_w_sample_weight(
+                X_rows,
+                X_cols,
+                X_vals,
+                p_w_given_z,
+                p_z_given_d,
+                p_z_given_wd,
+                sample_weight,
+                norm_pwz,
+                norm_pdz,
+            )
+        else:
+            plsa_m_step(
+                X_rows,
+                X_cols,
+                X_vals,
+                p_w_given_z,
+                p_z_given_d,
+                p_z_given_wd,
+                norm_pwz,
+                norm_pdz,
+            )
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
@@ -587,6 +704,8 @@ def plsa_fit(
     p_z_given_d = p_z_given_d.astype(np.float32, order="C")
     p_w_given_z = p_w_given_z.astype(np.float32, order="C")
 
+    use_sample_weights = np.any(sample_weight != 1.0)
+
     A = X.tocoo().astype(np.float32)
 
     p_z_given_d, p_w_given_z = plsa_fit_inner(
@@ -600,6 +719,7 @@ def plsa_fit(
         n_iter_per_test,
         tolerance,
         e_step_thresh,
+        use_sample_weights,
     )
 
     return p_z_given_d, p_w_given_z

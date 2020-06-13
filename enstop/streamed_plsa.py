@@ -109,6 +109,105 @@ def plsa_e_step_on_a_block(
 
 
 @numba.njit(
+    "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],i8,i8)",
+    locals={
+        "k": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
+        "s": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+)
+def plsa_partial_m_step_on_a_block(
+    X_rows,
+    X_cols,
+    X_vals,
+    p_w_given_z,
+    p_z_given_d,
+    p_z_given_wd_block,
+    norm_pwz,
+    norm_pdz,
+    block_start,
+    block_end,
+):
+    """Perform a partial M-step of pLSA optimization. This amounts to using the
+    estimates of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation
+    implements
+
+    P(w|z) = \frac{\sum_{d\in D} X_{w,d}P(z|w,d)}{\sum_{d,z} X_{w,d}P(z|w,d)}
+    P(z|d) = \frac{\sum_{w\in V} X_{w,d}P(z|w,d)}{\sum_{w,d} X_{w,d}P(z|w,d)}
+
+    This routine is optimized to work with sparse matrices such that P(z|w,d) is only
+    computed for w, d such that X_{w,d} is non-zero, where X is the data matrix.
+
+    To make this numba compilable the raw arrays defining the COO format sparse
+    matrix must be passed separately.
+
+    Note that in order to not store the entire P(z|w,d) matrix in memory at once
+    we only process a block of it here. The normalization in the above formulas
+    will actually be computed after all blocks have been completed.
+
+    Parameters
+    ----------
+    X_rows: array of shape (nnz,)
+        For each non-zero entry of X, the row of the entry.
+
+    X_cols: array of shape (nnz,)
+        For each non-zero entry of X, the column of the
+        entry.
+
+    X_vals: array of shape (nnz,)
+        For each non-zero entry of X, the value of entry.
+
+    p_w_given_z: array of shape (n_topics, n_words)
+        The result array to write new estimates of P(w|z) to.
+
+    p_z_given_d: array of shape (n_docs, n_topics)
+        The result array to write new estimates of P(z|d) to.
+
+    p_z_given_wd_block: array of shape (block_size, n_topics)
+        The current estimates for P(z|w,d) for a block
+
+    norm_pwz: array of shape (n_topics,)
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
+
+    norm_pdz: array of shape (n_docs,)
+        Auxilliary array used for storing row norms; this is passed in to save
+        reallocations.
+
+    sample_weight: array of shape (n_docs,)
+        Input document weights.
+
+    block_start: int
+        The index into nen-zeros of X where this block starts
+
+    block_end: int
+        The index into nen-zeros of X where this block ends
+
+    """
+
+    k = p_z_given_wd_block.shape[1]
+
+    for nz_idx in range(block_start, block_end):
+        d = X_rows[nz_idx]
+        w = X_cols[nz_idx]
+        x = X_vals[nz_idx]
+
+        for z in range(k):
+            s = x * p_z_given_wd_block[nz_idx - block_start, z]
+
+            p_w_given_z[z, w] += s
+            p_z_given_d[d, z] += s
+
+            norm_pwz[z] += s
+            norm_pdz[d] += s
+
+
+@numba.njit(
     "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],f4[::1],i8,i8)",
     locals={
         "k": numba.types.uint16,
@@ -120,9 +219,8 @@ def plsa_e_step_on_a_block(
     },
     fastmath=True,
     nogil=True,
-    parallel=True,
 )
-def plsa_partial_m_step_on_a_block(
+def plsa_partial_m_step_on_a_block_w_sample_weight(
     X_rows,
     X_cols,
     X_vals,
@@ -194,7 +292,7 @@ def plsa_partial_m_step_on_a_block(
 
     k = p_z_given_wd_block.shape[1]
 
-    for nz_idx in numba.prange(block_start, block_end):
+    for nz_idx in range(block_start, block_end):
         d = X_rows[nz_idx]
         w = X_cols[nz_idx]
         x = X_vals[nz_idx]
@@ -209,9 +307,80 @@ def plsa_partial_m_step_on_a_block(
             norm_pwz[z] += t
             norm_pdz[d] += s
 
-
 @numba.njit(parallel=True, fastmath=True, nogil=True)
 def plsa_em_step(
+    X_rows,
+    X_cols,
+    X_vals,
+    prev_p_w_given_z,
+    prev_p_z_given_d,
+    next_p_w_given_z,
+    next_p_z_given_d,
+    p_z_given_wd_block,
+    norm_pwz,
+    norm_pdz,
+    e_step_thresh=1e-32,
+):
+
+    k = p_z_given_wd_block.shape[1]
+    n = prev_p_z_given_d.shape[0]
+    m = prev_p_w_given_z.shape[1]
+
+    block_size = p_z_given_wd_block.shape[0]
+    n_blocks = (X_vals.shape[0] // block_size) + 1
+
+    # zero out the norms for recomputation
+    norm_pdz[:] = 0.0
+    norm_pwz[:] = 0.0
+
+    # Loop over blocks doing E step on a block and a partial M step
+    for block_index in range(n_blocks):
+        block_start = block_index * block_size
+        block_end = min(X_vals.shape[0], block_start + block_size)
+
+        plsa_e_step_on_a_block(
+            X_rows,
+            X_cols,
+            X_vals,
+            prev_p_w_given_z,
+            prev_p_z_given_d,
+            p_z_given_wd_block,
+            block_start,
+            block_end,
+            e_step_thresh,
+        )
+        plsa_partial_m_step_on_a_block(
+            X_rows,
+            X_cols,
+            X_vals,
+            next_p_w_given_z,
+            next_p_z_given_d,
+            p_z_given_wd_block,
+            norm_pwz,
+            norm_pdz,
+            block_start,
+            block_end,
+        )
+
+    # Once complete we can normalize to complete the M step
+    for z in numba.prange(k):
+        if norm_pwz[z] > 0:
+            for w in range(m):
+                next_p_w_given_z[z, w] /= norm_pwz[z]
+        for d in range(n):
+            if norm_pdz[d] > 0:
+                next_p_z_given_d[d, z] /= norm_pdz[d]
+
+    # Zero out the old matrices, we'll swap them on return and
+    # these will become the new "next"
+    prev_p_w_given_z[:] = 0.0
+    prev_p_z_given_d[:] = 0.0
+
+    return next_p_w_given_z, next_p_z_given_d, prev_p_w_given_z, prev_p_z_given_d
+
+
+@numba.njit(parallel=True, fastmath=True, nogil=True)
+def plsa_em_step_w_sample_weights(
     X_rows,
     X_cols,
     X_vals,
@@ -253,7 +422,7 @@ def plsa_em_step(
             block_end,
             e_step_thresh,
         )
-        plsa_partial_m_step_on_a_block(
+        plsa_partial_m_step_on_a_block_w_sample_weight(
             X_rows,
             X_cols,
             X_vals,
@@ -297,6 +466,7 @@ def plsa_fit_inner_blockwise(
     n_iter_per_test=10,
     tolerance=0.001,
     e_step_thresh=1e-32,
+    use_sample_weights=False,
 ):
     """Internal loop of EM steps required to optimize pLSA, along with relative
     convergence tests with respect to the log-likelihood of observing the data under
@@ -372,20 +542,36 @@ def plsa_fit_inner_blockwise(
 
     for i in range(n_iter):
 
-        p_w_given_z, p_z_given_d, next_p_w_given_z, next_p_z_given_d = plsa_em_step(
-            X_rows,
-            X_cols,
-            X_vals,
-            p_w_given_z,
-            p_z_given_d,
-            next_p_w_given_z,
-            next_p_z_given_d,
-            p_z_given_wd_block,
-            norm_pwz,
-            norm_pdz,
-            sample_weight,
-            e_step_thresh,
-        )
+        if use_sample_weights:
+            p_w_given_z, p_z_given_d, next_p_w_given_z, next_p_z_given_d = \
+                plsa_em_step_w_sample_weights(
+                X_rows,
+                X_cols,
+                X_vals,
+                p_w_given_z,
+                p_z_given_d,
+                next_p_w_given_z,
+                next_p_z_given_d,
+                p_z_given_wd_block,
+                norm_pwz,
+                norm_pdz,
+                sample_weight,
+                e_step_thresh,
+            )
+        else:
+            p_w_given_z, p_z_given_d, next_p_w_given_z, next_p_z_given_d = plsa_em_step(
+                X_rows,
+                X_cols,
+                X_vals,
+                p_w_given_z,
+                p_z_given_d,
+                next_p_w_given_z,
+                next_p_z_given_d,
+                p_z_given_wd_block,
+                norm_pwz,
+                norm_pdz,
+                e_step_thresh,
+            )
 
         if i % n_iter_per_test == 0:
             current_log_likelihood = log_likelihood(
@@ -474,6 +660,8 @@ def plsa_fit(
     p_z_given_d = p_z_given_d.astype(np.float32, order="C")
     p_w_given_z = p_w_given_z.astype(np.float32, order="C")
 
+    use_sample_weights = np.any(sample_weight != 1.0)
+
     A = X.tocoo().astype(np.float32)
 
     p_z_given_d, p_w_given_z = plsa_fit_inner_blockwise(
@@ -488,6 +676,7 @@ def plsa_fit(
         n_iter_per_test=n_iter_per_test,
         tolerance=tolerance,
         e_step_thresh=e_step_thresh,
+        use_sample_weights=use_sample_weights,
     )
 
     return p_z_given_d, p_w_given_z
