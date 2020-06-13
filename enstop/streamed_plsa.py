@@ -1200,13 +1200,13 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
             data_for_fitting,
             self.n_components,
             sample_weight,
-            self.init,
-            self.block_size,
-            self.n_iter,
-            self.n_iter_per_test,
-            self.tolerance,
-            self.e_step_thresh,
-            self.random_state,
+            init=self.init,
+            block_size=self.block_size,
+            n_iter=self.n_iter,
+            n_iter_per_test=self.n_iter_per_test,
+            tolerance=self.tolerance,
+            e_step_thresh=self.e_step_thresh,
+            random_state=self.random_state,
         )
 
         if zero_rows_found:
@@ -1246,6 +1246,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         result = plsa_refit(
             X,
             self.components_,
+            block_size=self.block_size,
             n_iter=50,
             n_iter_per_test=5,
             tolerance=0.001,
