@@ -37,9 +37,9 @@ configuration = {
     "license": "BSD",
     "packages": ["enstop"],
     "install_requires": [
-        "scikit-learn >= 0.21",
+        "scikit-learn >= 0.23",
         "scipy >= 1.0",
-        "numba >= 0.43",
+        "numba >= 0.48",
         "dask[delayed] >= 1.2",
         "hdbscan >= 0.8",
         "umap-learn >= 0.3.8",

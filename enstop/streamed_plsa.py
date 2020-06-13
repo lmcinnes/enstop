@@ -120,6 +120,7 @@ def plsa_e_step_on_a_block(
     },
     fastmath=True,
     nogil=True,
+    parallel=True,
 )
 def plsa_partial_m_step_on_a_block(
     X_rows,
@@ -193,7 +194,7 @@ def plsa_partial_m_step_on_a_block(
 
     k = p_z_given_wd_block.shape[1]
 
-    for nz_idx in range(block_start, block_end):
+    for nz_idx in numba.prange(block_start, block_end):
         d = X_rows[nz_idx]
         w = X_cols[nz_idx]
         x = X_vals[nz_idx]

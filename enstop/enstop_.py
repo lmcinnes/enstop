@@ -3,6 +3,7 @@ import numba
 from warnings import warn
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
+from sklearn.utils.validation import _check_sample_weight
 from sklearn.decomposition import NMF, non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 import dask
@@ -81,9 +82,11 @@ def plsa_topics(X, k, **kwargs):
         B = A[bootstrap_sample_indices]
     else:
         B = A
+    sample_weight = _check_sample_weight(None, B, dtype=np.float32)
     doc_topic, topic_vocab = plsa_fit(
         B,
         k,
+        sample_weight,
         init=kwargs.get("init", "random"),
         n_iter=kwargs.get("n_iter", 100),
         n_iter_per_test=kwargs.get("n_iter_per_test", 10),
@@ -542,8 +545,10 @@ def ensemble_fit(
         normalize(stable_topics, axis=1)
 
     if model == "plsa":
+        sample_weight = _check_sample_weight(None, X, dtype=np.float32)
         doc_vectors = plsa_refit(
-            X, stable_topics, e_step_thresh=e_step_thresh, random_state=random_state,
+            X, stable_topics, sample_weight, e_step_thresh=e_step_thresh,
+            random_state=random_state,
         )
     elif model == "nmf":
         doc_vectors, _, _ = non_negative_factorization(
