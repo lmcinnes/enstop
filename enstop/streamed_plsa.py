@@ -461,7 +461,7 @@ def plsa_fit_inner_blockwise(
     p_w_given_z,
     p_z_given_d,
     sample_weight,
-    block_size=16384,
+    block_size=65536,
     n_iter=100,
     n_iter_per_test=10,
     tolerance=0.001,
@@ -500,7 +500,7 @@ def plsa_fit_inner_blockwise(
     sample_weight: array of shape (n_docs,)
         Input document weights.
 
-    block_size: int (optional, default=16384)
+    block_size: int (optional, default=65536)
         The number of nonzero entries of X to process in a block. The larger this
         value the faster the compute may go, but at higher memory cost.
 
@@ -591,7 +591,7 @@ def plsa_fit(
     k,
     sample_weight,
     init="random",
-    block_size=16384,
+    block_size=65536,
     n_iter=100,
     n_iter_per_test=10,
     tolerance=0.001,
@@ -623,7 +623,7 @@ def plsa_fit(
             * ``"nmf"``
         or a tuple of two ndarrays of shape (n_docs, n_topics) and (n_topics, n_words).
 
-    block_size: int (optional, default=16384)
+    block_size: int (optional, default=65536)
         The number of nonzero entries of X to process in a block. The larger this
         value the faster the compute may go, but at higher memory cost.
 
@@ -842,7 +842,7 @@ def plsa_refit_inner_blockwise(
     topics,
     p_z_given_d,
     sample_weight,
-    block_size=16384,
+    block_size=65536,
     n_iter=50,
     n_iter_per_test=10,
     tolerance=0.005,
@@ -879,7 +879,7 @@ def plsa_refit_inner_blockwise(
     sample_weight: array of shape (n_docs,)
         Input document weights.
 
-    block_size: int (optional, default=16384)
+    block_size: int (optional, default=65536)
         The number of nonzero entries of X to process in a block. The larger this
         value the faster the compute may go, but at higher memory cost.
 
@@ -946,7 +946,7 @@ def plsa_refit(
     X,
     topics,
     sample_weight,
-    block_size=16384,
+    block_size=65536,
     n_iter=50,
     n_iter_per_test=10,
     tolerance=0.005,
@@ -968,7 +968,7 @@ def plsa_refit(
     sample_weight: array of shape (n_docs,)
         Input document weights.
 
-    block_size: int (optional, default=16384)
+    block_size: int (optional, default=65536)
         The number of nonzero entries of X to process in a block. The larger this
         value the faster the compute may go, but at higher memory cost.
 
@@ -1055,7 +1055,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
             * ``"nmf"``
         or a tuple of two ndarrays of shape (n_docs, n_topics) and (n_topics, n_words).
 
-    block_size: int (optional, default=16384)
+    block_size: int (optional, default=65536)
         The number of nonzero entries of X to process in a block. The larger this
         value the faster the compute may go, but at higher memory cost.
 
@@ -1111,7 +1111,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         self,
         n_components=10,
         init="random",
-        block_size=16384,
+        block_size=65536,
         n_iter=100,
         n_iter_per_test=10,
         tolerance=0.001,
