@@ -704,7 +704,6 @@ def plsa_partial_refit_m_step_on_a_block(
     X_vals,
     p_z_given_d,
     p_z_given_wd_block,
-    sample_weight,
     norm_pdz,
     block_start,
     block_end,
@@ -815,10 +814,8 @@ def plsa_refit_em_step(
             X_rows,
             X_cols,
             X_vals,
-            p_w_given_z,
             next_p_z_given_d,
             p_z_given_wd_block,
-            sample_weight,
             norm_pdz,
             block_start,
             block_end,
@@ -913,7 +910,7 @@ def plsa_refit_inner_blockwise(
     norm_pdz = np.zeros(p_z_given_d.shape[0], dtype=np.float32)
 
     previous_log_likelihood = log_likelihood(
-        X_rows, X_cols, X_vals, topics, p_z_given_d
+        X_rows, X_cols, X_vals, topics, p_z_given_d, sample_weight,
     )
 
     next_p_z_given_d = np.zeros_like(p_z_given_d)
