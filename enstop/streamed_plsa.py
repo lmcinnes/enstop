@@ -3,7 +3,10 @@ import numba
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
-from sklearn.utils.validation import _check_sample_weight
+try:
+    from sklearn.utils.validation import _check_sample_weight
+except ImportError:
+    from enstop.utils import _check_sample_weight
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
@@ -1220,7 +1223,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
 
         return U
 
-    def transform(self, X, y=None):
+    def transform(self, X, y=None, sample_weight=None):
         """Transform the data X into the topic space of the fitted pLSA model.
 
         Parameters
@@ -1236,6 +1239,8 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
             An embedding of the documents X into the topic space.
         """
         X = check_array(X, accept_sparse="csr")
+        sample_weight = _check_sample_weight(
+            sample_weight, X, dtype=np.float32)
         random_state = check_random_state(self.transform_random_seed)
 
         if not issparse(X):
@@ -1246,6 +1251,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         result = plsa_refit(
             X,
             self.components_,
+            sample_weight,
             block_size=self.block_size,
             n_iter=50,
             n_iter_per_test=5,

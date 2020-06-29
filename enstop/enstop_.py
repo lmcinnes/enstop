@@ -3,7 +3,10 @@ import numba
 from warnings import warn
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
-from sklearn.utils.validation import _check_sample_weight
+try:
+    from sklearn.utils.validation import _check_sample_weight
+except ImportError:
+    from enstop.utils import _check_sample_weight
 from sklearn.decomposition import NMF, non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 import dask

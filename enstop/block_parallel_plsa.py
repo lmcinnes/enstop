@@ -9,8 +9,9 @@ from scipy.sparse import issparse, csr_matrix, coo_matrix
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
 from enstop.plsa import plsa_init
 
+
 @numba.njit(
-    # 'f4[:,::1](i4[::1],i4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)',
+    "f4[:,::1](i4[::1],i4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -56,7 +57,7 @@ def plsa_e_step_on_a_block(
 
 
 @numba.njit(
-    # 'void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])',
+    "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -79,7 +80,7 @@ def plsa_partial_m_step_on_a_block(
     norm_pwz,
     norm_pdz_block,
 ):
-    k = p_z_given_wd_block.shape[1]
+    k = p_w_given_z_block.shape[0]
 
     for nz_idx in range(block_rows.shape[0]):
         if block_rows[nz_idx] < 0:
@@ -100,22 +101,22 @@ def plsa_partial_m_step_on_a_block(
 
 
 @numba.njit(
-    # 'void(i4[:,:,::1],i4[:,:,::1],f4[:,:,::1],f4[:,::1],f4[:,::1],f4[:,:,::1],f4[:,:,'
-    # '::1],f4[:,:,:,::1],f4[:,::1],f4[:,::1],i4,i4,f4)',
+    "void(i4[:,:,::1],i4[:,:,::1],f4[:,:,::1],f4[:,:,::1],f4[:,:,::1],f4[:,:,:,::1],"
+    "f4[:,:,:,::1],f4[:,:,:,::1],f4[:,::1],f4[:,:,::1],f4)",
     locals={
         "n": numba.types.uint32,
         "m": numba.types.uint32,
         "k": numba.types.uint16,
         "z": numba.types.uint16,
         "d": numba.types.uint32,
-        "row_start": numba.types.uint32,
-        "row_end": numba.types.uint32,
-        "col_start": numba.types.uint32,
-        "col_end": numba.types.uint32,
+        "i": numba.types.uint16,
+        "j": numba.types.uint16,
+        "n_w_blocks": numba.types.uint16,
+        "n_d_blocks": numba.types.uint16,
     },
     parallel=True,
     fastmath=True,
-    nogil=True
+    nogil=True,
 )
 def plsa_em_step_by_blocks(
     block_rows_ndarray,
@@ -128,16 +129,14 @@ def plsa_em_step_by_blocks(
     p_z_given_wd_block,
     blocked_norm_pwz,
     blocked_norm_pdz,
-    block_row_size,
-    block_col_size,
     e_step_thresh=1e-32,
 ):
     n_d_blocks = block_rows_ndarray.shape[0]
     n_w_blocks = block_rows_ndarray.shape[1]
 
-    n = prev_p_z_given_d.shape[0]
-    m = prev_p_w_given_z.shape[1]
-    k = prev_p_z_given_d.shape[1]
+    # n = prev_p_z_given_d.shape[0]
+    # m = prev_p_w_given_z.shape[1]
+    k = prev_p_z_given_d.shape[2]
 
     # zero out the norms for recomputation
     blocked_norm_pdz[:] = 0.0
@@ -145,34 +144,28 @@ def plsa_em_step_by_blocks(
 
     for i in numba.prange(n_d_blocks):
 
-        row_start = block_row_size * i
-        row_end = min(row_start + block_row_size, n)
-
-        for j in range(n_w_blocks):
+        for j in numba.prange(n_w_blocks):
             block_rows = block_rows_ndarray[i, j]
             block_cols = block_cols_ndarray[i, j]
             block_vals = block_vals_ndarray[i, j]
 
-            col_start = block_col_size * j
-            col_end = min(col_start + block_col_size, m)
-
             plsa_e_step_on_a_block(
                 block_rows,
                 block_cols,
-                prev_p_w_given_z[:, col_start:col_end],
-                prev_p_z_given_d[row_start:row_end, :],
+                prev_p_w_given_z[j],
+                prev_p_z_given_d[i],
                 p_z_given_wd_block[i, j],
-                e_step_thresh,
+                np.float32(e_step_thresh),
             )
             plsa_partial_m_step_on_a_block(
                 block_rows,
                 block_cols,
                 block_vals,
-                blocked_next_p_w_given_z[i, :, col_start:col_end],
-                blocked_next_p_z_given_d[j, row_start:row_end, :],
+                blocked_next_p_w_given_z[i, j],
+                blocked_next_p_z_given_d[j, i],
                 p_z_given_wd_block[i, j],
                 blocked_norm_pwz[i],
-                blocked_norm_pdz[j, row_start:row_end],
+                blocked_norm_pdz[j, i],
             )
 
     prev_p_z_given_d[:] = blocked_next_p_z_given_d.sum(axis=0)
@@ -183,11 +176,15 @@ def plsa_em_step_by_blocks(
     # Once complete we can normalize to complete the M step
     for z in numba.prange(k):
         if norm_pwz[z] > 0:
-            for w in range(m):
-                prev_p_w_given_z[z, w] /= norm_pwz[z]
-        for d in range(n):
-            if norm_pdz[d] > 0:
-                prev_p_z_given_d[d, z] /= norm_pdz[d]
+            for w_block in range(prev_p_w_given_z.shape[0]):
+                for w_offset in range(prev_p_w_given_z.shape[2]):
+                    prev_p_w_given_z[w_block, z, w_offset] /= norm_pwz[z]
+        for d_block in range(prev_p_z_given_d.shape[0]):
+            for d_offset in range(prev_p_z_given_d.shape[1]):
+                if norm_pdz[d_block, d_offset] > 0:
+                    prev_p_z_given_d[d_block, d_offset, z] /= norm_pdz[
+                        d_block, d_offset
+                    ]
 
     # Zero out the old matrices these matrices for next time
     blocked_next_p_z_given_d[:] = 0.0
@@ -217,11 +214,9 @@ def log_likelihood_by_blocks(
     block_vals_ndarray,
     p_w_given_z,
     p_z_given_d,
-    block_row_size,
-    block_col_size,
 ):
     result = 0.0
-    k = p_w_given_z.shape[0]
+    k = p_z_given_d.shape[2]
 
     for i in numba.prange(block_rows_ndarray.shape[0]):
         for j in range(block_rows_ndarray.shape[1]):
@@ -229,13 +224,13 @@ def log_likelihood_by_blocks(
                 if block_rows_ndarray[i, j, nz_idx] < 0:
                     break
 
-                d = block_rows_ndarray[i, j, nz_idx] + i * block_row_size
-                w = block_cols_ndarray[i, j, nz_idx] + j * block_col_size
+                d = block_rows_ndarray[i, j, nz_idx]
+                w = block_cols_ndarray[i, j, nz_idx]
                 x = block_vals_ndarray[i, j, nz_idx]
 
                 p_w_given_d = 0.0
                 for z in range(k):
-                    p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
+                    p_w_given_d += p_w_given_z[j, z, w] * p_z_given_d[i, d, z]
 
                 result += x * np.log(p_w_given_d)
 
@@ -256,9 +251,7 @@ def plsa_fit_inner_blockwise(
     tolerance=0.001,
     e_step_thresh=1e-32,
 ):
-    k = p_z_given_d.shape[1]
-    n = p_z_given_d.shape[0]
-    m = p_w_given_z.shape[1]
+    k = p_z_given_d.shape[2]
 
     n_d_blocks = block_rows_ndarray.shape[0]
     n_w_blocks = block_rows_ndarray.shape[1]
@@ -268,10 +261,29 @@ def plsa_fit_inner_blockwise(
         (n_d_blocks, n_w_blocks, block_size, k), dtype=np.float32
     )
 
-    blocked_next_p_w_given_z = np.zeros((n_d_blocks, k, m), dtype=np.float32)
+    blocked_next_p_w_given_z = np.zeros(
+        (
+            np.int64(n_d_blocks),
+            np.int64(n_w_blocks),
+            np.int64(k),
+            np.int64(block_col_size),
+        ),
+        dtype=np.float32,
+    )
     blocked_norm_pwz = np.zeros((n_d_blocks, k), dtype=np.float32)
-    blocked_next_p_z_given_d = np.zeros((n_w_blocks, n, k), dtype=np.float32)
-    blocked_norm_pdz = np.zeros((n_w_blocks, n), dtype=np.float32)
+    blocked_next_p_z_given_d = np.zeros(
+        (
+            np.int64(n_w_blocks),
+            np.int64(n_d_blocks),
+            np.int64(block_row_size),
+            np.int64(k),
+        ),
+        dtype=np.float32,
+    )
+    blocked_norm_pdz = np.zeros(
+        (np.int64(n_w_blocks), np.int64(n_d_blocks), np.int64(block_row_size)),
+        dtype=np.float32,
+    )
 
     previous_log_likelihood = log_likelihood_by_blocks(
         block_rows_ndarray,
@@ -279,8 +291,6 @@ def plsa_fit_inner_blockwise(
         block_vals_ndarray,
         p_w_given_z,
         p_z_given_d,
-        block_row_size,
-        block_col_size,
     )
 
     for i in range(n_iter):
@@ -295,8 +305,6 @@ def plsa_fit_inner_blockwise(
             p_z_given_wd_block,
             blocked_norm_pwz,
             blocked_norm_pdz,
-            block_row_size,
-            block_col_size,
             e_step_thresh,
         )
 
@@ -307,8 +315,6 @@ def plsa_fit_inner_blockwise(
                 block_vals_ndarray,
                 p_w_given_z,
                 p_z_given_d,
-                block_row_size,
-                block_col_size,
             )
             change = np.abs(current_log_likelihood - previous_log_likelihood)
             if change / np.abs(current_log_likelihood) < tolerance:
@@ -332,9 +338,7 @@ def plsa_fit(
     random_state=None,
 ):
     rng = check_random_state(random_state)
-    p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, rng=rng)
-    p_z_given_d = p_z_given_d.astype(np.float32, order="C")
-    p_w_given_z = p_w_given_z.astype(np.float32, order="C")
+    p_z_given_d_init, p_w_given_z_init = plsa_init(X, k, init=init, rng=rng)
 
     A = X.tocsr().astype(np.float32)
 
@@ -343,6 +347,16 @@ def plsa_fit(
 
     block_row_size = np.uint16(np.ceil(A.shape[0] / n_row_blocks))
     block_col_size = np.uint16(np.ceil(A.shape[1] / n_col_blocks))
+
+    p_z_given_d = np.zeros((block_row_size * n_row_blocks, k), dtype=np.float32)
+    p_z_given_d[: p_z_given_d_init.shape[0]] = p_z_given_d_init
+    p_z_given_d = p_z_given_d.reshape(n_row_blocks, block_row_size, k)
+
+    p_w_given_z = np.zeros((k, block_col_size * n_col_blocks), dtype=np.float32)
+    p_w_given_z[:, : p_w_given_z_init.shape[1]] = p_w_given_z_init
+    p_w_given_z = np.transpose(
+        p_w_given_z.T.reshape(n_col_blocks, block_col_size, k), axes=[0, 2, 1]
+    ).astype(np.float32, order="C")
 
     A_blocks = [[0] * n_col_blocks for i in range(n_row_blocks)]
     max_nnz_per_block = 0
@@ -389,6 +403,9 @@ def plsa_fit(
         tolerance=tolerance,
         e_step_thresh=e_step_thresh,
     )
+    p_z_given_d = p_z_given_d.reshape(-1, k)[:n, :]
+    p_w_given_z = np.transpose(p_w_given_z, axes=[0, 2, 1]).reshape(-1, k).T[:, :m]
+
     # p_z_given_d, p_w_given_z = plsa_fit_inner_dask(
     #     block_rows_ndarray,
     #     block_cols_ndarray,
