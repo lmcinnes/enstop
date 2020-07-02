@@ -1140,7 +1140,7 @@ class PLSA(BaseEstimator, TransformerMixin):
                              "entries")
 
         row_sums = np.array(X.sum(axis=1).T)[0]
-        good_rows = row_sums != 0)
+        good_rows = row_sums != 0
 
         if not np.all(good_rows):
             zero_rows_found = True
