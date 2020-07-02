@@ -1218,7 +1218,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         self.components_ = V
         self.training_data_ = X
 
-        return U
+        return self.embedding_
 
     def transform(self, X, y=None, sample_weight=None):
         """Transform the data X into the topic space of the fitted pLSA model.

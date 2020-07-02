@@ -536,4 +536,4 @@ class BlockParallelPLSA(BaseEstimator, TransformerMixin):
         self.components_ = V
         self.training_data_ = X
 
-        return U
+        return self.embedding_
