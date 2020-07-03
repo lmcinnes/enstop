@@ -12,6 +12,7 @@ from enstop.plsa import plsa_init
 
 @numba.njit(
     "f4[:,::1](i4[::1],i4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
+    "f4[:,::1](i4[::1],i4[::1],f4[:,:],f4[:,::1],f4[:,::1],f4)",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -58,6 +59,7 @@ def plsa_e_step_on_a_block(
 
 @numba.njit(
     "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
+    "void(i4[::1],i4[::1],f4[::1],f4[:,:],f4[:,:],f4[:,::1],f4[::1],f4[::1])",
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
