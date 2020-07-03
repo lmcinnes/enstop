@@ -73,7 +73,7 @@ def plsa_em_step_dask(
     result_norm_pwz = []
     result_norm_pdz = [[] for i in range(n_d_blocks)]
 
-    for i in numba.prange(n_d_blocks):
+    for i in range(n_d_blocks):
 
         row_start = block_row_size * i
         row_end = min(row_start + block_row_size, n)
@@ -243,7 +243,9 @@ def plsa_fit(
     random_state=None,
 ):
     rng = check_random_state(random_state)
-    p_z_given_d_init, p_w_given_z_init = plsa_init(X, k, init=init, rng=rng)
+    p_z_given_d, p_w_given_z = plsa_init(X, k, init=init, rng=rng)
+    p_z_given_d = p_z_given_d.astype(np.float32, order="C")
+    p_w_given_z = p_w_given_z.astype(np.float32, order="C")
 
     A = X.tocsr().astype(np.float32)
 
@@ -252,16 +254,6 @@ def plsa_fit(
 
     block_row_size = np.uint16(np.ceil(A.shape[0] / n_row_blocks))
     block_col_size = np.uint16(np.ceil(A.shape[1] / n_col_blocks))
-
-    p_z_given_d = np.zeros((block_row_size * n_row_blocks, k), dtype=np.float32)
-    p_z_given_d[: p_z_given_d_init.shape[0]] = p_z_given_d_init
-    p_z_given_d = p_z_given_d.reshape(n_row_blocks, block_row_size, k)
-
-    p_w_given_z = np.zeros((k, block_col_size * n_col_blocks), dtype=np.float32)
-    p_w_given_z[:, : p_w_given_z_init.shape[1]] = p_w_given_z_init
-    p_w_given_z = np.transpose(
-        p_w_given_z.T.reshape(n_col_blocks, block_col_size, k), axes=[0, 2, 1]
-    ).astype(np.float32, order="C")
 
     A_blocks = [[0] * n_col_blocks for i in range(n_row_blocks)]
     max_nnz_per_block = 0
