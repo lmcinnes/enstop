@@ -6,13 +6,21 @@ from sklearn.utils import check_array, check_random_state
 from sklearn.utils.validation import _check_sample_weight
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
-from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
+from enstop.utils import (
+    normalize,
+    coherence,
+    mean_coherence,
+    log_lift,
+    mean_log_lift,
+)
 from enstop.plsa import plsa_init
 
 
 @numba.njit(
-    # "f4[:,::1](i4[::1],i4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
-    # "f4[:,::1](i4[::1],i4[::1],f4[:,:],f4[:,::1],f4[:,::1],f4)",
+    [
+        "f4[:,::1](i4[::1],i4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
+        "f4[:,::1](i4[::1],i4[::1],f4[:,:],f4[:,::1],f4[:,::1],f4)",
+    ],
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -58,8 +66,10 @@ def plsa_e_step_on_a_block(
 
 
 @numba.njit(
-    # "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
-    # "void(i4[::1],i4[::1],f4[::1],f4[:,:],f4[:,:],f4[:,::1],f4[::1],f4[::1])",
+    [
+        "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
+        "void(i4[::1],i4[::1],f4[::1],f4[:,:],f4[:,:],f4[:,::1],f4[::1],f4[::1])",
+    ],
     locals={
         "k": numba.types.uint16,
         "w": numba.types.uint32,
@@ -406,7 +416,9 @@ def plsa_fit(
         e_step_thresh=e_step_thresh,
     )
     p_z_given_d = p_z_given_d.reshape(-1, k)[:n, :]
-    p_w_given_z = np.transpose(p_w_given_z, axes=[0, 2, 1]).reshape(-1, k).T[:, :m]
+    p_w_given_z = (
+        np.transpose(p_w_given_z, axes=[0, 2, 1]).reshape(-1, k).T[:, :m]
+    )
 
     # p_z_given_d, p_w_given_z = plsa_fit_inner_dask(
     #     block_rows_ndarray,
