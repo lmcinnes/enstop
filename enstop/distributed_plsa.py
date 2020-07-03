@@ -10,7 +10,6 @@ from enstop.plsa import plsa_init
 from enstop.block_parallel_plsa import (
     plsa_e_step_on_a_block,
     plsa_partial_m_step_on_a_block,
-    log_likelihood_by_blocks,
 )
 
 from dask import delayed
@@ -131,6 +130,53 @@ def plsa_em_step_dask(
 
     return p_w_given_z.compute(), p_z_given_d.compute()
 
+
+@numba.njit(
+    locals={
+        "i": numba.types.uint16,
+        "j": numba.types.uint16,
+        "k": numba.types.uint16,
+        "w": numba.types.uint32,
+        "d": numba.types.uint32,
+        "z": numba.types.uint16,
+        "nz_idx": numba.types.uint32,
+        "x": numba.types.float32,
+        "result": numba.types.float32,
+        "p_w_given_d": numba.types.float32,
+    },
+    fastmath=True,
+    nogil=True,
+    parallel=True,
+)
+def log_likelihood_by_blocks(
+    block_rows_ndarray,
+    block_cols_ndarray,
+    block_vals_ndarray,
+    p_w_given_z,
+    p_z_given_d,
+    block_row_size,
+    block_col_size,
+):
+    result = 0.0
+    k = p_w_given_z.shape[0]
+
+    for i in numba.prange(block_rows_ndarray.shape[0]):
+        for j in range(block_rows_ndarray.shape[1]):
+            for nz_idx in range(block_rows_ndarray.shape[2]):
+                if block_rows_ndarray[i, j, nz_idx] < 0:
+                    break
+
+                d = block_rows_ndarray[i, j, nz_idx] + i * block_row_size
+                w = block_cols_ndarray[i, j, nz_idx] + j * block_col_size
+                x = block_vals_ndarray[i, j, nz_idx]
+
+                p_w_given_d = 0.0
+                for z in range(k):
+                    p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
+
+                result += x * np.log(p_w_given_d)
+
+    return result
 
 def plsa_fit_inner_dask(
     block_rows_ndarray,
