@@ -128,7 +128,7 @@ def plsa_em_step_dask(
     )
     p_z_given_d = da.vstack(p_z_given_d_blocks) / da.hstack(norm_pdz_blocks).T
 
-    return p_w_given_z.compute(), p_z_given_d.compute()
+    return p_w_given_z, p_z_given_d
 
 
 @numba.njit(
@@ -217,8 +217,8 @@ def plsa_fit_inner_dask(
                 block_rows_ndarray,
                 block_cols_ndarray,
                 block_vals_ndarray,
-                p_w_given_z,
-                p_z_given_d,
+                p_w_given_z.compute(),
+                p_z_given_d.compute(),
                 block_row_size,
                 block_col_size,
             )
