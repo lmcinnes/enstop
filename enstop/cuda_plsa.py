@@ -1,5 +1,6 @@
 import numpy as np
 import numba
+import numba.cuda as cuda
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
@@ -15,176 +16,81 @@ from enstop.utils import (
     standardize_input,
 )
 from enstop.plsa import plsa_init
+from enstop.block_parallel_plsa import log_likelihood_by_blocks
 
 
-@numba.njit(
-    [
-        "f4[:,::1](i4[::1],i4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
-        "f4[:,::1](i4[::1],i4[::1],f4[:,:],f4[:,::1],f4[:,::1],f4)",
-    ],
-    locals={
-        "k": numba.types.uint16,
-        "w": numba.types.uint32,
-        "d": numba.types.uint32,
-        "z": numba.types.uint16,
-        "v": numba.types.float32,
-        "nz_idx": numba.types.uint32,
-        "norm": numba.types.float32,
-    },
-    fastmath=True,
-    nogil=True,
-)
-def plsa_e_step_on_a_block(
-    block_rows,
-    block_cols,
-    p_w_given_z_block,
-    p_z_given_d_block,
-    p_z_given_wd_block,
-    probability_threshold=1e-32,
-):
-    k = p_w_given_z_block.shape[0]
-
-    for nz_idx in range(block_rows.shape[0]):
-        if block_rows[nz_idx] < 0:
-            break
-
-        d = block_rows[nz_idx]
-        w = block_cols[nz_idx]
-
-        norm = 0.0
-        for z in range(k):
-            v = p_w_given_z_block[z, w] * p_z_given_d_block[d, z]
-            if v > probability_threshold:
-                p_z_given_wd_block[nz_idx, z] = v
-                norm += v
-            else:
-                p_z_given_wd_block[nz_idx, z] = 0.0
-        for z in range(k):
-            if norm > 0:
-                p_z_given_wd_block[nz_idx, z] /= norm
-
-    return p_z_given_wd_block
-
-
-@numba.njit(
-    [
-        "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
-        "void(i4[::1],i4[::1],f4[::1],f4[:,:],f4[:,:],f4[:,::1],f4[::1],f4[::1])",
-    ],
-    locals={
-        "k": numba.types.uint16,
-        "w": numba.types.uint32,
-        "d": numba.types.uint32,
-        "x": numba.types.float32,
-        "z": numba.types.uint16,
-        "nz_idx": numba.types.uint32,
-        "s": numba.types.float32,
-    },
-    fastmath=True,
-    nogil=True,
-)
-def plsa_partial_m_step_on_a_block(
+@cuda.jit()
+def plsa_e_partial_m_step(
     block_rows,
     block_cols,
     block_vals,
     p_w_given_z_block,
     p_z_given_d_block,
+    result_p_w_given_z_block,
+    result_p_z_given_d_block,
     p_z_given_wd_block,
-    norm_pwz,
-    norm_pdz_block,
+    e_step_thresh=1.0e-32,
 ):
-    k = p_w_given_z_block.shape[0]
+    z = cuda.threadIdx.x
+    i = cuda.blockIdx.x
+    j = cuda.blockIdx.y
+    k = p_z_given_d_block[i].shape[1]
+    nnz = block_rows.shape[2]
 
-    for nz_idx in range(block_rows.shape[0]):
-        if block_rows[nz_idx] < 0:
-            break
+    # Base E-step
+    if z < k:
+        for nz_idx in range(block_rows[i, j].shape[0]):
+            if block_rows[i, j, nz_idx] < 0:
+                break
 
-        d = block_rows[nz_idx]
-        w = block_cols[nz_idx]
-        x = block_vals[nz_idx]
+            d = block_rows[i, j, nz_idx]
+            w = block_cols[i, j, nz_idx]
 
-        for z in range(k):
-            s = x * p_z_given_wd_block[nz_idx, z]
+            v = p_w_given_z_block[j, z, w] * p_z_given_d_block[i, d, z]
+            if v > e_step_thresh:
+                p_z_given_wd_block[i, j, nz_idx, z] = v
+            else:
+                p_z_given_wd_block[i, j, nz_idx, z] = 0.0
 
-            p_w_given_z_block[z, w] += s
-            p_z_given_d_block[d, z] += s
+    cuda.syncthreads()
 
-            norm_pwz[z] += s
-            norm_pdz_block[d] += s
+    n_norms_per_thread = (nnz // k) + 1
+
+    # Normalize E-step
+    for n in range(n_norms_per_thread):
+        n_idx = z * n_norms_per_thread + n
+        if n_idx < nnz and block_rows[i, j, n_idx] >= 0:
+          norm = 0.0
+          for p in range(k):
+              norm += p_z_given_wd_block[i, j, n_idx, p]
+          for p in range(k):
+              if norm > 0.0:
+                  p_z_given_wd_block[i, j, n_idx, p] /= norm
+
+    cuda.syncthreads()
+
+    # Partial M-step
+    if z < k:
+        for nz_idx in range(block_rows[i, j].shape[0]):
+            if block_rows[i, j, nz_idx] < 0:
+                break
+
+            d = block_rows[i, j, nz_idx]
+            w = block_cols[i, j, nz_idx]
+            x = block_vals[i, j, nz_idx]
+
+            s = x * p_z_given_wd_block[i, j, nz_idx, z]
+
+            result_p_w_given_z_block[i, j, z, w] += s
+            result_p_z_given_d_block[j, i, d, z] += s
 
 
-@numba.njit(
-    "void(i4[:,:,::1],i4[:,:,::1],f4[:,:,::1],f4[:,:,::1],f4[:,:,::1],f4[:,:,:,::1],"
-    "f4[:,:,:,::1],f4[:,:,:,::1],f4[:,::1],f4[:,:,::1],f4)",
-    locals={
-        "n": numba.types.uint32,
-        "m": numba.types.uint32,
-        "k": numba.types.uint16,
-        "z": numba.types.uint16,
-        "d": numba.types.uint32,
-        "i": numba.types.uint16,
-        "j": numba.types.uint16,
-        "n_w_blocks": numba.types.uint16,
-        "n_d_blocks": numba.types.uint16,
-    },
-    parallel=True,
-    fastmath=True,
-    nogil=True,
-)
-def plsa_em_step_by_blocks(
-    block_rows_ndarray,
-    block_cols_ndarray,
-    block_vals_ndarray,
-    prev_p_w_given_z,
-    prev_p_z_given_d,
-    blocked_next_p_w_given_z,
-    blocked_next_p_z_given_d,
-    p_z_given_wd_block,
-    blocked_norm_pwz,
-    blocked_norm_pdz,
-    e_step_thresh=1e-32,
-):
-    n_d_blocks = block_rows_ndarray.shape[0]
-    n_w_blocks = block_rows_ndarray.shape[1]
-
-    # n = prev_p_z_given_d.shape[0]
-    # m = prev_p_w_given_z.shape[1]
-    k = prev_p_z_given_d.shape[2]
-
-    # zero out the norms for recomputation
-    blocked_norm_pdz[:] = 0.0
-    blocked_norm_pwz[:] = 0.0
-
-    for i in numba.prange(n_d_blocks):
-
-        for j in numba.prange(n_w_blocks):
-            block_rows = block_rows_ndarray[i, j]
-            block_cols = block_cols_ndarray[i, j]
-            block_vals = block_vals_ndarray[i, j]
-
-            plsa_e_step_on_a_block(
-                block_rows,
-                block_cols,
-                prev_p_w_given_z[j],
-                prev_p_z_given_d[i],
-                p_z_given_wd_block[i, j],
-                np.float32(e_step_thresh),
-            )
-            plsa_partial_m_step_on_a_block(
-                block_rows,
-                block_cols,
-                block_vals,
-                blocked_next_p_w_given_z[i, j],
-                blocked_next_p_z_given_d[j, i],
-                p_z_given_wd_block[i, j],
-                blocked_norm_pwz[i],
-                blocked_norm_pdz[j, i],
-            )
-
-    prev_p_z_given_d[:] = blocked_next_p_z_given_d.sum(axis=0)
-    norm_pdz = blocked_norm_pdz.sum(axis=0)
-    prev_p_w_given_z[:] = blocked_next_p_w_given_z.sum(axis=0)
-    norm_pwz = blocked_norm_pwz.sum(axis=0)
+@numba.njit(parallel=True, fastmath=True, nogil=True)
+def normalize_m_step(blocked_next_p_z_given_d, blocked_next_p_w_given_z, k):
+    prev_p_z_given_d = blocked_next_p_z_given_d.sum(axis=0)
+    norm_pdz = prev_p_z_given_d.astype(np.float64).sum(axis=2)
+    prev_p_w_given_z = blocked_next_p_w_given_z.sum(axis=0)
+    norm_pwz = prev_p_w_given_z.astype(np.float64).sum(axis=0).sum(axis=1)
 
     # Once complete we can normalize to complete the M step
     for z in numba.prange(k):
@@ -199,58 +105,48 @@ def plsa_em_step_by_blocks(
                         d_block, d_offset
                     ]
 
-    # Zero out the old matrices these matrices for next time
-    blocked_next_p_z_given_d[:] = 0.0
-    blocked_next_p_w_given_z[:] = 0.0
+    return prev_p_z_given_d, prev_p_w_given_z
 
 
-@numba.njit(
-    locals={
-        "i": numba.types.uint16,
-        "j": numba.types.uint16,
-        "k": numba.types.uint16,
-        "w": numba.types.uint32,
-        "d": numba.types.uint32,
-        "z": numba.types.uint16,
-        "nz_idx": numba.types.uint32,
-        "x": numba.types.float32,
-        "result": numba.types.float32,
-        "p_w_given_d": numba.types.float32,
-    },
-    fastmath=True,
-    nogil=True,
-    parallel=True,
-)
-def log_likelihood_by_blocks(
-    block_rows_ndarray,
-    block_cols_ndarray,
-    block_vals_ndarray,
+def plsa_gpu_em_step(
+    d_block_rows_ndarray,
+    d_block_cols_ndarray,
+    d_block_vals_ndarray,
     p_w_given_z,
     p_z_given_d,
+    blocked_next_p_w_given_z,
+    blocked_next_p_z_given_d,
+    d_p_z_given_wd_block,
+    e_step_thresh=1.0e-32,
 ):
-    result = 0.0
+    d_p_w_given_z = cuda.to_device(p_w_given_z)
+    d_p_z_given_d = cuda.to_device(p_z_given_d)
+    n_d_blocks = d_block_rows_ndarray.shape[0]
+    n_w_blocks = d_block_rows_ndarray.shape[1]
     k = p_z_given_d.shape[2]
 
-    for i in numba.prange(block_rows_ndarray.shape[0]):
-        for j in range(block_rows_ndarray.shape[1]):
-            for nz_idx in range(block_rows_ndarray.shape[2]):
-                if block_rows_ndarray[i, j, nz_idx] < 0:
-                    break
+    plsa_e_partial_m_step[(n_d_blocks, n_w_blocks), k](
+        d_block_rows_ndarray,
+        d_block_cols_ndarray,
+        d_block_vals_ndarray,
+        d_p_w_given_z,
+        d_p_z_given_d,
+        blocked_next_p_w_given_z,
+        blocked_next_p_z_given_d,
+        d_p_z_given_wd_block,
+        e_step_thresh=e_step_thresh,
+    )
 
-                d = block_rows_ndarray[i, j, nz_idx]
-                w = block_cols_ndarray[i, j, nz_idx]
-                x = block_vals_ndarray[i, j, nz_idx]
+    p_z_given_d[:], p_w_given_z[:] = normalize_m_step(blocked_next_p_z_given_d,
+                                                      blocked_next_p_w_given_z, k)
 
-                p_w_given_d = 0.0
-                for z in range(k):
-                    p_w_given_d += p_w_given_z[j, z, w] * p_z_given_d[i, d, z]
+    blocked_next_p_z_given_d[:] = 0
+    blocked_next_p_w_given_z[:] = 0
 
-                result += x * np.log(p_w_given_d)
-
-    return result
+    return p_z_given_d, p_w_given_z
 
 
-@numba.njit(fastmath=True, nogil=True)
+
 def plsa_fit_inner_blockwise(
     block_rows_ndarray,
     block_cols_ndarray,
@@ -283,7 +179,6 @@ def plsa_fit_inner_blockwise(
         ),
         dtype=np.float32,
     )
-    blocked_norm_pwz = np.zeros((n_d_blocks, k), dtype=np.float32)
     blocked_next_p_z_given_d = np.zeros(
         (
             np.int64(n_w_blocks),
@@ -291,10 +186,6 @@ def plsa_fit_inner_blockwise(
             np.int64(block_row_size),
             np.int64(k),
         ),
-        dtype=np.float32,
-    )
-    blocked_norm_pdz = np.zeros(
-        (np.int64(n_w_blocks), np.int64(n_d_blocks), np.int64(block_row_size)),
         dtype=np.float32,
     )
 
@@ -306,19 +197,23 @@ def plsa_fit_inner_blockwise(
         p_z_given_d,
     )
 
+    d_block_rows_ndarray = cuda.to_device(block_rows_ndarray)
+    d_block_cols_ndarray = cuda.to_device(block_cols_ndarray)
+    d_block_vals_ndarray = cuda.to_device(block_vals_ndarray)
+    d_p_z_given_wd_block = cuda.to_device(p_z_given_wd_block)
+
+
     for i in range(n_iter):
-        plsa_em_step_by_blocks(
-            block_rows_ndarray,
-            block_cols_ndarray,
-            block_vals_ndarray,
+        plsa_gpu_em_step(
+            d_block_rows_ndarray,
+            d_block_cols_ndarray,
+            d_block_vals_ndarray,
             p_w_given_z,
             p_z_given_d,
             blocked_next_p_w_given_z,
             blocked_next_p_z_given_d,
-            p_z_given_wd_block,
-            blocked_norm_pwz,
-            blocked_norm_pdz,
-            e_step_thresh,
+            d_p_z_given_wd_block,
+            e_step_thresh=e_step_thresh,
         )
 
         if i % n_iter_per_test == 0:
@@ -336,7 +231,6 @@ def plsa_fit_inner_blockwise(
                 previous_log_likelihood = current_log_likelihood
 
     return p_z_given_d, p_w_given_z
-
 
 def plsa_fit(
     X,
@@ -423,7 +317,7 @@ def plsa_fit(
     return p_z_given_d, p_w_given_z
 
 
-class BlockParallelPLSA(BaseEstimator, TransformerMixin):
+class GPUPLSA(BaseEstimator, TransformerMixin):
     def __init__(
         self,
         n_components=10,

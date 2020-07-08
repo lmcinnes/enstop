@@ -3,13 +3,21 @@ import numba
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
+
 try:
     from sklearn.utils.validation import _check_sample_weight
 except ImportError:
     from enstop.utils import _check_sample_weight
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
-from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
+from enstop.utils import (
+    normalize,
+    coherence,
+    mean_coherence,
+    log_lift,
+    mean_log_lift,
+    standardize_input,
+)
 from enstop.plsa import log_likelihood, plsa_init
 
 
@@ -310,6 +318,7 @@ def plsa_partial_m_step_on_a_block_w_sample_weight(
             norm_pwz[z] += t
             norm_pdz[d] += s
 
+
 @numba.njit(parallel=True, fastmath=True, nogil=True)
 def plsa_em_step(
     X_rows,
@@ -546,8 +555,12 @@ def plsa_fit_inner_blockwise(
     for i in range(n_iter):
 
         if use_sample_weights:
-            p_w_given_z, p_z_given_d, next_p_w_given_z, next_p_z_given_d = \
-                plsa_em_step_w_sample_weights(
+            (
+                p_w_given_z,
+                p_z_given_d,
+                next_p_w_given_z,
+                next_p_z_given_d,
+            ) = plsa_em_step_w_sample_weights(
                 X_rows,
                 X_cols,
                 X_vals,
@@ -942,6 +955,7 @@ def plsa_refit_inner_blockwise(
 
     return p_z_given_d
 
+
 def plsa_refit(
     X,
     topics,
@@ -1174,12 +1188,12 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
         """
 
         X = check_array(X, accept_sparse="csr")
+        X = standardize_input(X)
 
         if not issparse(X):
             X = csr_matrix(X)
 
-        sample_weight = _check_sample_weight(
-            sample_weight, X, dtype=np.float32)
+        sample_weight = _check_sample_weight(sample_weight, X, dtype=np.float32)
 
         if np.any(X.data < 0):
             raise ValueError(
@@ -1236,8 +1250,7 @@ class StreamedPLSA(BaseEstimator, TransformerMixin):
             An embedding of the documents X into the topic space.
         """
         X = check_array(X, accept_sparse="csr")
-        sample_weight = _check_sample_weight(
-            sample_weight, X, dtype=np.float32)
+        sample_weight = _check_sample_weight(sample_weight, X, dtype=np.float32)
         random_state = check_random_state(self.transform_random_seed)
 
         if not issparse(X):
