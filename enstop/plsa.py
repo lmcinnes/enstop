@@ -4,6 +4,7 @@ import numba
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
 from sklearn.utils.extmath import randomized_svd
+
 try:
     from sklearn.utils.validation import _check_sample_weight
 except ImportError:
@@ -11,7 +12,15 @@ except ImportError:
 from sklearn.decomposition import non_negative_factorization
 from scipy.sparse import issparse, csr_matrix, coo_matrix
 
-from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
+from enstop.utils import (
+    normalize,
+    coherence,
+    mean_coherence,
+    log_lift,
+    mean_log_lift,
+    standardize_input,
+)
+
 
 @numba.njit(
     "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
@@ -113,14 +122,7 @@ def plsa_e_step(
     parallel=True,
 )
 def plsa_m_step(
-    X_rows,
-    X_cols,
-    X_vals,
-    p_w_given_z,
-    p_z_given_d,
-    p_z_given_wd,
-    norm_pwz,
-    norm_pdz
+    X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, p_z_given_wd, norm_pwz, norm_pdz
 ):
     """Perform the M-step of pLSA optimization. This amounts to using the estimates
     of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation implements
@@ -225,7 +227,7 @@ def plsa_m_step_w_sample_weight(
     p_z_given_wd,
     sample_weight,
     norm_pwz,
-    norm_pdz
+    norm_pdz,
 ):
     """Perform the M-step of pLSA optimization. This amounts to using the estimates
     of P(z|w,d) to estimate the values P(w|z) and P(z|d). The computation implements
@@ -630,7 +632,7 @@ def plsa_fit_inner(
                 X_rows, X_cols, X_vals, p_w_given_z, p_z_given_d, sample_weight
             )
             change = np.abs(current_log_likelihood - previous_log_likelihood)
-            if change / np.abs(current_log_likelihood) < tolerance:
+            if change == 0 or change / np.abs(current_log_likelihood) < tolerance:
                 break
             else:
                 previous_log_likelihood = current_log_likelihood
@@ -749,7 +751,7 @@ def plsa_refit_m_step(
     p_z_given_d,
     p_z_given_wd,
     sample_weight,
-    norm_pdz
+    norm_pdz,
 ):
     """Optimized routine for the M step fitting values of P(z|d) given a fixed set of
     topics (i.e. P(w|z)).
@@ -894,7 +896,14 @@ def plsa_refit_inner(
             X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, e_step_thresh
         )
         plsa_refit_m_step(
-            X_rows, X_cols, X_vals, topics, p_z_given_d, p_z_given_wd, sample_weight, norm_pdz
+            X_rows,
+            X_cols,
+            X_vals,
+            topics,
+            p_z_given_d,
+            p_z_given_wd,
+            sample_weight,
+            norm_pdz,
         )
 
         if i % n_iter_per_test == 0:
@@ -1127,17 +1136,17 @@ class PLSA(BaseEstimator, TransformerMixin):
         """
 
         X = check_array(X, accept_sparse="csr")
+        X = standardize_input(X)
 
         if not issparse(X):
             X = csr_matrix(X)
 
-
-        sample_weight = _check_sample_weight(
-            sample_weight, X, dtype=np.float32)
+        sample_weight = _check_sample_weight(sample_weight, X, dtype=np.float32)
 
         if np.any(X.data < 0):
-            raise ValueError("PLSA is only valid for matrices with non-negative "
-                             "entries")
+            raise ValueError(
+                "PLSA is only valid for matrices with non-negative " "entries"
+            )
 
         row_sums = np.array(X.sum(axis=1).T)[0]
         good_rows = row_sums != 0
@@ -1191,8 +1200,7 @@ class PLSA(BaseEstimator, TransformerMixin):
         random_state = check_random_state(self.transform_random_seed)
 
         # Set weights to 1 for all examples
-        sample_weight = _check_sample_weight(
-            None, X, dtype=np.float32)
+        sample_weight = _check_sample_weight(None, X, dtype=np.float32)
 
         if not issparse(X):
             X = coo_matrix(X)

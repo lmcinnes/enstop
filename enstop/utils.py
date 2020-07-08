@@ -2,6 +2,7 @@ import numpy as np
 import numba
 from scipy.sparse import issparse, csc_matrix
 from sklearn.utils.validation import check_array
+from sklearn.preprocessing import normalize as sklearn_normalize
 import numbers
 
 @numba.njit(fastmath=True, nogil=True)
@@ -270,6 +271,13 @@ def mean_coherence(topics, data, n_words=20):
             for z in range(topics.shape[0])
         ]
     )
+
+
+def standardize_input(input_matrix):
+    if input_matrix.dtype in (np.float32, np.float64, np.float, np.double):
+        return sklearn_normalize(input_matrix, norm="l1")
+    else:
+        return input_matrix
 
 ####
 # Taken from sklearn as a fallback option; by default we import their latest version
