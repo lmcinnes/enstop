@@ -29,7 +29,7 @@ def plsa_e_partial_m_step(
     result_p_w_given_z_block,
     result_p_z_given_d_block,
     p_z_given_wd_block,
-    e_step_thresh=1.0e-32,
+    e_step_thresh,
 ):
     z = cuda.threadIdx.x
     i = cuda.blockIdx.x
@@ -134,7 +134,7 @@ def plsa_gpu_em_step(
         blocked_next_p_w_given_z,
         blocked_next_p_z_given_d,
         d_p_z_given_wd_block,
-        e_step_thresh=e_step_thresh,
+        e_step_thresh,
     )
 
     p_z_given_d[:], p_w_given_z[:] = normalize_m_step(blocked_next_p_z_given_d,
