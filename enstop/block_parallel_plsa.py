@@ -370,7 +370,7 @@ def plsa_fit(
     # p_w_given_z = np.transpose(
     #     p_w_given_z.T.reshape(n_col_blocks, block_col_size, k), axes=[0, 2, 1]
     # ).astype(np.float32, order="C")
-    p_w_given_z = np.stack(np.hsplit(p_w_given_z, 10))
+    p_w_given_z = np.stack(np.hsplit(p_w_given_z, n_col_blocks))
 
     A_blocks = [[0] * n_col_blocks for i in range(n_row_blocks)]
     max_nnz_per_block = 0

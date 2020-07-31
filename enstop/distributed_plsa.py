@@ -275,6 +275,8 @@ def plsa_fit(
             if A_blocks[i][j].nnz > max_nnz_per_block:
                 max_nnz_per_block = A_blocks[i][j].nnz
 
+    del A
+
     block_rows_ndarray = np.full(
         (n_row_blocks, n_col_blocks, max_nnz_per_block), -1, dtype=np.int32
     )
@@ -290,6 +292,8 @@ def plsa_fit(
             block_rows_ndarray[i, j, :nnz] = A_blocks[i][j].row
             block_cols_ndarray[i, j, :nnz] = A_blocks[i][j].col
             block_vals_ndarray[i, j, :nnz] = A_blocks[i][j].data
+
+    del A_blocks
 
     p_z_given_d, p_w_given_z = plsa_fit_inner_dask(
         block_rows_ndarray,

@@ -1,5 +1,6 @@
 import numpy as np
 import numba
+import numba.cuda
 from warnings import warn
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_random_state
@@ -13,7 +14,6 @@ import dask
 
 try:
     import joblib
-
     _HAVE_JOBLIB = True
 except ImportError:
     warn("Joblib could not be loaded; joblib parallelism will not be available")
@@ -24,30 +24,33 @@ import hdbscan
 import umap
 
 # TODO: Once umap 0.4 is released enable this...
-# from umap.distances import hellinger
+from umap.distances import hellinger
 
 
-@numba.njit()
-def hellinger(x, y):
-    result = 0.0
-    l1_norm_x = 0.0
-    l1_norm_y = 0.0
-
-    for i in range(x.shape[0]):
-        result += np.sqrt(x[i] * y[i])
-        l1_norm_x += x[i]
-        l1_norm_y += y[i]
-
-    if l1_norm_x == 0 and l1_norm_y == 0:
-        return 0.0
-    elif l1_norm_x == 0 or l1_norm_y == 0:
-        return 1.0
-    else:
-        return np.sqrt(1 - result / np.sqrt(l1_norm_x * l1_norm_y))
+# @numba.njit()
+# def hellinger(x, y):
+#     result = 0.0
+#     l1_norm_x = 0.0
+#     l1_norm_y = 0.0
+#
+#     for i in range(x.shape[0]):
+#         result += np.sqrt(x[i] * y[i])
+#         l1_norm_x += x[i]
+#         l1_norm_y += y[i]
+#
+#     if l1_norm_x == 0 and l1_norm_y == 0:
+#         return 0.0
+#     elif l1_norm_x == 0 or l1_norm_y == 0:
+#         return 1.0
+#     else:
+#         return np.sqrt(1 - result / np.sqrt(l1_norm_x * l1_norm_y))
 
 
 from enstop.utils import normalize, coherence, mean_coherence, log_lift, mean_log_lift
 from enstop.plsa import plsa_fit, plsa_refit
+
+if numba.cuda.is_available():
+    from enstop.cuda_plsa import plsa_fit as gpu_plsa_fit
 
 
 def plsa_topics(X, k, **kwargs):
@@ -86,17 +89,29 @@ def plsa_topics(X, k, **kwargs):
     else:
         B = A
     sample_weight = _check_sample_weight(None, B, dtype=np.float32)
-    doc_topic, topic_vocab = plsa_fit(
-        B,
-        k,
-        sample_weight,
-        init=kwargs.get("init", "random"),
-        n_iter=kwargs.get("n_iter", 100),
-        n_iter_per_test=kwargs.get("n_iter_per_test", 10),
-        tolerance=kwargs.get("tolerance", 0.001),
-        e_step_thresh=kwargs.get("e_step_thresh", 1e-16),
-        random_state=kwargs.get("random_state", None),
-    )
+    if numba.cuda.is_available():
+        doc_topic, topic_vocab = gpu_plsa_fit(
+            B,
+            k,
+            init=kwargs.get("init", "random"),
+            n_iter=kwargs.get("n_iter", 100),
+            n_iter_per_test=kwargs.get("n_iter_per_test", 10),
+            tolerance=kwargs.get("tolerance", 0.001),
+            e_step_thresh=kwargs.get("e_step_thresh", 1e-16),
+            random_state=kwargs.get("random_state", None),
+        )
+    else:
+        doc_topic, topic_vocab = plsa_fit(
+            B,
+            k,
+            sample_weight,
+            init=kwargs.get("init", "random"),
+            n_iter=kwargs.get("n_iter", 100),
+            n_iter_per_test=kwargs.get("n_iter_per_test", 10),
+            tolerance=kwargs.get("tolerance", 0.001),
+            e_step_thresh=kwargs.get("e_step_thresh", 1e-16),
+            random_state=kwargs.get("random_state", None),
+        )
     return topic_vocab
 
 
