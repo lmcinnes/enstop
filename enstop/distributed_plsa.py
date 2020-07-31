@@ -256,8 +256,8 @@ def plsa_fit(
     n = A.shape[0]
     m = A.shape[1]
 
-    block_row_size = np.uint16(np.ceil(A.shape[0] / n_row_blocks))
-    block_col_size = np.uint16(np.ceil(A.shape[1] / n_col_blocks))
+    block_row_size = np.uint32(np.ceil(A.shape[0] / n_row_blocks))
+    block_col_size = np.uint32(np.ceil(A.shape[1] / n_col_blocks))
 
     A_blocks = [[0] * n_col_blocks for i in range(n_row_blocks)]
     max_nnz_per_block = 0
