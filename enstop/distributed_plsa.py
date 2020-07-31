@@ -12,7 +12,7 @@ from enstop.block_parallel_plsa import (
     plsa_partial_m_step_on_a_block,
 )
 
-from dask import delayed
+from dask import delayed, compute
 import dask.array as da
 
 
@@ -128,7 +128,7 @@ def plsa_em_step_dask(
     )
     p_z_given_d = da.vstack(p_z_given_d_blocks) / da.hstack(norm_pdz_blocks).T
 
-    return p_w_given_z.compute(), p_z_given_d.compute()
+    return compute(p_w_given_z, p_z_given_d)
 
 
 @numba.njit(
@@ -271,6 +271,8 @@ def plsa_fit(
             if A_blocks[i][j].nnz > max_nnz_per_block:
                 max_nnz_per_block = A_blocks[i][j].nnz
 
+    del A
+
     block_rows_ndarray = np.full(
         (n_row_blocks, n_col_blocks, max_nnz_per_block), -1, dtype=np.int32
     )
@@ -286,6 +288,8 @@ def plsa_fit(
             block_rows_ndarray[i, j, :nnz] = A_blocks[i][j].row
             block_cols_ndarray[i, j, :nnz] = A_blocks[i][j].col
             block_vals_ndarray[i, j, :nnz] = A_blocks[i][j].data
+
+    del A_blocks
 
     p_z_given_d, p_w_given_z = plsa_fit_inner_dask(
         block_rows_ndarray,
