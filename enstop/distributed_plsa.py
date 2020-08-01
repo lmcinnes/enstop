@@ -68,8 +68,8 @@ def plsa_em_step_dask(
     m = p_w_given_z.shape[1]
     k = p_z_given_d.shape[1]
 
-    result_p_w_given_z = [[] for i in range(n_d_blocks)]
-    result_p_z_given_d = [[] for i in range(n_w_blocks)]
+    result_p_w_given_z = [[] for i in range(n_w_blocks)]
+    result_p_z_given_d = [[] for i in range(n_d_blocks)]
     result_norm_pwz = []
     result_norm_pdz = [[] for i in range(n_d_blocks)]
 
