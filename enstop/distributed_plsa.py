@@ -127,7 +127,7 @@ def plsa_em_step_dask(
         da.hstack(p_w_given_z_blocks) / da.dstack(result_norm_pwz).sum(axis=-1).T
     )
     p_z_given_d = da.vstack(p_z_given_d_blocks) / da.hstack(norm_pdz_blocks).T
-    
+
     result = compute(p_w_given_z, p_z_given_d)
 
     return result
@@ -143,13 +143,44 @@ def plsa_em_step_dask(
         "z": numba.types.uint16,
         "nz_idx": numba.types.uint32,
         "x": numba.types.float32,
-        "result": numba.types.float32,
+        "result": numba.types.float32[:, :, ::1],
         "p_w_given_d": numba.types.float32,
     },
     fastmath=True,
     nogil=True,
     parallel=True,
 )
+def log_likelihood_by_blocks_kernel(
+    block_rows,
+    block_cols,
+    block_vals,
+    p_w_given_z,
+    p_z_given_d,
+    block_row_size,
+    block_col_size,
+    block_info=None,
+):
+    result = np.zeros((1, 1, 1), dtype=np.float32)
+    k = p_w_given_z.shape[0]
+    i, j = block_info[0]["chunk-location"]
+
+    for nz_idx in range(block_rows.shape[2]):
+        if block_rows[nz_idx] < 0:
+            break
+
+        d = block_rows[nz_idx] + i * block_row_size
+        w = block_cols[nz_idx] + j * block_col_size
+        x = block_vals[nz_idx]
+
+        p_w_given_d = 0.0
+        for z in range(k):
+            p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
+
+        result[0, 0, 0] += x * np.log(p_w_given_d)
+
+    return result
+
+
 def log_likelihood_by_blocks(
     block_rows_ndarray,
     block_cols_ndarray,
@@ -159,26 +190,20 @@ def log_likelihood_by_blocks(
     block_row_size,
     block_col_size,
 ):
-    result = 0.0
-    k = p_w_given_z.shape[0]
 
-    for i in numba.prange(block_rows_ndarray.shape[0]):
-        for j in range(block_rows_ndarray.shape[1]):
-            for nz_idx in range(block_rows_ndarray.shape[2]):
-                if block_rows_ndarray[i, j, nz_idx] < 0:
-                    break
+    log_likelihood_per_block = da.map_blocks(
+        log_likelihood_by_blocks_kernel,
+        block_rows_ndarray,
+        block_cols_ndarray,
+        block_vals_ndarray,
+        p_w_given_z,
+        p_z_given_d,
+        block_row_size,
+        block_col_size,
+    )
+    result = log_likelihood_per_block.sum()
+    return result.compute()
 
-                d = block_rows_ndarray[i, j, nz_idx] + i * block_row_size
-                w = block_cols_ndarray[i, j, nz_idx] + j * block_col_size
-                x = block_vals_ndarray[i, j, nz_idx]
-
-                p_w_given_d = 0.0
-                for z in range(k):
-                    p_w_given_d += p_w_given_z[z, w] * p_z_given_d[d, z]
-
-                result += x * np.log(p_w_given_d)
-
-    return result
 
 def plsa_fit_inner_dask(
     block_rows_ndarray,
@@ -202,8 +227,10 @@ def plsa_fit_inner_dask(
         block_row_size,
         block_col_size,
     )
-    
-    block_rows_ndarray, block_cols_ndarray, block_vals_ndarray = persist(block_rows_ndarray, block_cols_ndarray, block_vals_ndarray)
+
+    # block_rows_ndarray, block_cols_ndarray, block_vals_ndarray = persist(
+    #     block_rows_ndarray, block_cols_ndarray, block_vals_ndarray
+    # )
 
     for i in range(n_iter):
         p_w_given_z, p_z_given_d = plsa_em_step_dask(
@@ -233,6 +260,7 @@ def plsa_fit_inner_dask(
                 previous_log_likelihood = current_log_likelihood
 
     return p_z_given_d, p_w_given_z
+
 
 def plsa_fit(
     X,
@@ -277,14 +305,22 @@ def plsa_fit(
 
     del A
 
-    block_rows_ndarray = np.full(
-        (n_row_blocks, n_col_blocks, max_nnz_per_block), -1, dtype=np.int32
+    block_rows_ndarray = da.full(
+        (n_row_blocks, n_col_blocks, max_nnz_per_block),
+        -1,
+        dtype=np.int32,
+        chunks=(1, 1, max_nnz_per_block),
     )
-    block_cols_ndarray = np.full(
-        (n_row_blocks, n_col_blocks, max_nnz_per_block), -1, dtype=np.int32
+    block_cols_ndarray = da.full(
+        (n_row_blocks, n_col_blocks, max_nnz_per_block),
+        -1,
+        dtype=np.int32,
+        chunks=(1, 1, max_nnz_per_block),
     )
-    block_vals_ndarray = np.zeros(
-        (n_row_blocks, n_col_blocks, max_nnz_per_block), dtype=np.float32
+    block_vals_ndarray = da.zeros(
+        (n_row_blocks, n_col_blocks, max_nnz_per_block),
+        dtype=np.float32,
+        chunks=(1, 1, max_nnz_per_block),
     )
     for i in range(n_row_blocks):
         for j in range(n_col_blocks):
