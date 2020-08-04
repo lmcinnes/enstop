@@ -212,7 +212,7 @@ def log_likelihood_by_blocks(
 ):
 
     log_likelihood_per_block = da.map_blocks(
-        log_likelihood_by_blocks_kernel,
+        log_likelihood_by_blocks_kernel_wrapper,
         block_rows_ndarray,
         block_cols_ndarray,
         block_vals_ndarray,
