@@ -164,12 +164,12 @@ def log_likelihood_by_blocks_kernel(
     k = p_w_given_z.shape[0]
 
     for nz_idx in range(block_rows.shape[2]):
-        if block_rows[nz_idx] < 0:
+        if block_rows[0, 0, nz_idx] < 0:
             break
 
-        d = block_rows[nz_idx] + i * block_row_size
-        w = block_cols[nz_idx] + j * block_col_size
-        x = block_vals[nz_idx]
+        d = block_rows[0, 0, nz_idx] + i * block_row_size
+        w = block_cols[0, 0, nz_idx] + j * block_col_size
+        x = block_vals[0, 0, nz_idx]
 
         p_w_given_d = 0.0
         for z in range(k):
@@ -189,7 +189,7 @@ def log_likelihood_by_blocks_kernel_wrapper(
     block_col_size,
     block_info=None,
 ):
-    i, j = block_info[0]["chunk-location"]
+    i, j, _ = block_info[0]["chunk-location"]
     return log_likelihood_by_blocks_kernel(
         block_rows,
         block_cols,
