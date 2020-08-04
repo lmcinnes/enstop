@@ -158,11 +158,10 @@ def log_likelihood_by_blocks_kernel(
     p_z_given_d,
     block_row_size,
     block_col_size,
-    block_info=None,
+    i, j,
 ):
     result = np.zeros((1, 1, 1), dtype=np.float32)
     k = p_w_given_z.shape[0]
-    i, j = block_info[0]["chunk-location"]
 
     for nz_idx in range(block_rows.shape[2]):
         if block_rows[nz_idx] < 0:
@@ -180,6 +179,27 @@ def log_likelihood_by_blocks_kernel(
 
     return result
 
+def log_likelihood_by_blocks_kernel_wrapper(
+    block_rows,
+    block_cols,
+    block_vals,
+    p_w_given_z,
+    p_z_given_d,
+    block_row_size,
+    block_col_size,
+    block_info=None,
+):
+    i, j = block_info[0]["chunk-location"]
+    return log_likelihood_by_blocks_kernel(
+        block_rows,
+        block_cols,
+        block_vals,
+        p_w_given_z,
+        p_z_given_d,
+        block_row_size,
+        block_col_size,
+        i, j,
+    )
 
 def log_likelihood_by_blocks(
     block_rows_ndarray,
@@ -200,6 +220,7 @@ def log_likelihood_by_blocks(
         p_z_given_d,
         block_row_size,
         block_col_size,
+        dtype=np.float32,
     )
     result = log_likelihood_per_block.sum()
     return result.compute()
