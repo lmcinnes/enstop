@@ -305,22 +305,14 @@ def plsa_fit(
 
     del A
 
-    block_rows_ndarray = da.full(
-        (n_row_blocks, n_col_blocks, max_nnz_per_block),
-        -1,
-        dtype=np.int32,
-        chunks=(1, 1, max_nnz_per_block),
+    block_rows_ndarray = np.full(
+        (n_row_blocks, n_col_blocks, max_nnz_per_block), -1, dtype=np.int32,
     )
-    block_cols_ndarray = da.full(
-        (n_row_blocks, n_col_blocks, max_nnz_per_block),
-        -1,
-        dtype=np.int32,
-        chunks=(1, 1, max_nnz_per_block),
+    block_cols_ndarray = np.full(
+        (n_row_blocks, n_col_blocks, max_nnz_per_block), -1, dtype=np.int32,
     )
-    block_vals_ndarray = da.zeros(
-        (n_row_blocks, n_col_blocks, max_nnz_per_block),
-        dtype=np.float32,
-        chunks=(1, 1, max_nnz_per_block),
+    block_vals_ndarray = np.zeros(
+        (n_row_blocks, n_col_blocks, max_nnz_per_block), dtype=np.float32,
     )
     for i in range(n_row_blocks):
         for j in range(n_col_blocks):
@@ -330,6 +322,16 @@ def plsa_fit(
             block_vals_ndarray[i, j, :nnz] = A_blocks[i][j].data
 
     del A_blocks
+
+    block_rows_ndarray = da.from_array(
+        block_rows_ndarray, chunks=(1, 1, max_nnz_per_block),
+    )
+    block_cols_ndarray = da.from_array(
+        block_cols_ndarray, chunks=(1, 1, max_nnz_per_block),
+    )
+    block_vals_ndarray = da.from_array(
+        block_vals_ndarray, chunks=(1, 1, max_nnz_per_block),
+    )
 
     p_z_given_d, p_w_given_z = plsa_fit_inner_dask(
         block_rows_ndarray,
