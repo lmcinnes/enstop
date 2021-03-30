@@ -23,7 +23,7 @@ from enstop.plsa import plsa_init
         "f4[:,::1](i4[::1],i4[::1],f4[:,:],f4[:,::1],f4[:,::1],f4)",
     ],
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
@@ -72,7 +72,7 @@ def plsa_e_step_on_a_block(
         "void(i4[::1],i4[::1],f4[::1],f4[:,:],f4[:,:],f4[:,::1],f4[::1],f4[::1])",
     ],
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "x": numba.types.float32,
@@ -119,13 +119,13 @@ def plsa_partial_m_step_on_a_block(
     locals={
         "n": numba.types.uint32,
         "m": numba.types.uint32,
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "z": numba.types.uint16,
         "d": numba.types.uint32,
         "i": numba.types.uint16,
         "j": numba.types.uint16,
-        "n_w_blocks": numba.types.uint16,
-        "n_d_blocks": numba.types.uint16,
+        "n_w_blocks": numba.types.intp,
+        "n_d_blocks": numba.types.intp,
     },
     parallel=True,
     fastmath=True,
@@ -208,7 +208,7 @@ def plsa_em_step_by_blocks(
     locals={
         "i": numba.types.uint16,
         "j": numba.types.uint16,
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
