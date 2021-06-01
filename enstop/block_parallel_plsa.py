@@ -122,8 +122,8 @@ def plsa_partial_m_step_on_a_block(
         "d": numba.types.uint32,
         "i": numba.types.uint16,
         "j": numba.types.uint16,
-        "n_w_blocks": numba.types.uint16,
-        "n_d_blocks": numba.types.uint16,
+        "n_w_blocks": numba.types.intp,
+        "n_d_blocks": numba.types.intp,
     },
     parallel=True,
     fastmath=True,
@@ -368,7 +368,7 @@ def plsa_fit(
     # p_w_given_z = np.transpose(
     #     p_w_given_z.T.reshape(n_col_blocks, block_col_size, k), axes=[0, 2, 1]
     # ).astype(np.float32, order="C")
-    p_w_given_z = np.stack(np.hsplit(p_w_given_z, 10))
+    p_w_given_z = np.stack(np.hsplit(p_w_given_z, n_col_blocks))
 
     A_blocks = [[0] * n_col_blocks for i in range(n_row_blocks)]
     max_nnz_per_block = 0

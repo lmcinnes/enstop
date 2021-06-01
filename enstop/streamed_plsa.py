@@ -701,7 +701,7 @@ def plsa_fit(
 @numba.njit(
     "void(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[::1],i8,i8)",
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
