@@ -25,7 +25,7 @@ from enstop.utils import (
 @numba.njit(
     "f4[:,::1](i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4)",
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
@@ -110,7 +110,7 @@ def plsa_e_step(
 @numba.njit(
     "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
@@ -207,7 +207,7 @@ def plsa_m_step(
 @numba.njit(
     "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1],f4[::1])",
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
@@ -313,7 +313,7 @@ def plsa_m_step_w_sample_weight(
 @numba.njit(
     "f4(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[::1])",
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
@@ -733,7 +733,7 @@ def plsa_fit(
 @numba.njit(
     "UniTuple(f4[:,::1],2)(i4[::1],i4[::1],f4[::1],f4[:,::1],f4[:,::1],f4[:,::1],f4[::1],f4[::1])",
     locals={
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,

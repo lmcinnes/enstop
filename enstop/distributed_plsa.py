@@ -135,7 +135,7 @@ def plsa_em_step_dask(
     locals={
         "i": numba.types.uint16,
         "j": numba.types.uint16,
-        "k": numba.types.uint16,
+        "k": numba.types.intp,
         "w": numba.types.uint32,
         "d": numba.types.uint32,
         "z": numba.types.uint16,
