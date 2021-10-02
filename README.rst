@@ -27,7 +27,7 @@ around the same time it might take to fit an LDA model, and usually produces sup
 quality results.
 
 In addition to this EnsTop comes with a pLSA implementation that can be used
-standalone (and not as part of an ensemble). So if all you are loosing for is a good
+standalone (and not as part of an ensemble). So if all you are looking for is a good
 fast pLSA implementation (that can run considerably faster than many LDA
 implementations) then EnsTop is the library for you.
 
